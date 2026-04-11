@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import json
 import time
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlencode
-
-import aiohttp
+from urllib.request import Request, urlopen
 
 from futures_bot.config import Settings
 from futures_bot.models import Candle, MarketSnapshot
@@ -20,27 +20,22 @@ class BinanceFuturesClient:
         self.rest_base = (
             "https://testnet.binancefuture.com" if settings.testnet else "https://fapi.binance.com"
         )
-        self.session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "BinanceFuturesClient":
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20))
         return self
 
     async def __aexit__(self, *_: object) -> None:
-        if self.session:
-            await self.session.close()
+        return None
 
-    async def _request(
+    def _request_sync(
         self,
         method: str,
         path: str,
         params: dict[str, Any] | None = None,
         signed: bool = False,
     ) -> Any:
-        if not self.session:
-            raise RuntimeError("HTTP session not initialized")
         query = dict(params or {})
-        headers = {}
+        headers: dict[str, str] = {}
         if signed:
             query["timestamp"] = int(time.time() * 1000)
             payload = urlencode(query)
@@ -54,14 +49,27 @@ class BinanceFuturesClient:
         elif self.settings.api_key:
             headers["X-MBX-APIKEY"] = self.settings.api_key
 
-        async with self.session.request(
-            method,
-            f"{self.rest_base}{path}",
-            params=query,
-            headers=headers,
-        ) as response:
-            response.raise_for_status()
-            return await response.json()
+        url = f"{self.rest_base}{path}"
+        body: bytes | None = None
+        if method.upper() == "GET":
+            if query:
+                url = f"{url}?{urlencode(query)}"
+        else:
+            body = urlencode(query).encode()
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+        request = Request(url=url, data=body, headers=headers, method=method.upper())
+        with urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode())
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        signed: bool = False,
+    ) -> Any:
+        return await asyncio.to_thread(self._request_sync, method, path, params, signed)
 
     async def fetch_klines(self, symbol: str, interval: str, limit: int) -> list[Candle]:
         raw = await self._request(

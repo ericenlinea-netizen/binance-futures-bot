@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from aiohttp import web
+import asyncio
+import json
 
 from futures_bot.models import AccountState
 from futures_bot.portfolio_manager import PortfolioManager
@@ -10,7 +11,7 @@ class StatusServer:
     def __init__(self, account: AccountState, portfolio: PortfolioManager) -> None:
         self.account = account
         self.portfolio = portfolio
-        self.runner: web.AppRunner | None = None
+        self.server: asyncio.base_events.Server | None = None
 
     def _snapshot(self) -> dict:
         positions = [
@@ -39,22 +40,40 @@ class StatusServer:
             "open_positions": positions,
         }
 
-    async def _health(self, _: web.Request) -> web.Response:
-        return web.json_response({"status": "ok"})
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            request_line = await reader.readline()
+            path = "/"
+            if request_line:
+                parts = request_line.decode(errors="ignore").split(" ")
+                if len(parts) >= 2:
+                    path = parts[1]
+            while True:
+                line = await reader.readline()
+                if not line or line in {b"\r\n", b"\n"}:
+                    break
 
-    async def _status(self, _: web.Request) -> web.Response:
-        return web.json_response(self._snapshot())
+            if path == "/health":
+                body = json.dumps({"status": "ok"}).encode()
+            else:
+                body = json.dumps(self._snapshot()).encode()
+
+            writer.write(
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                + f"Content-Length: {len(body)}\r\n".encode()
+                + b"Connection: close\r\n\r\n"
+                + body
+            )
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
 
     async def start(self, port: int) -> None:
-        app = web.Application()
-        app.router.add_get("/", self._status)
-        app.router.add_get("/health", self._health)
-        app.router.add_get("/status", self._status)
-        self.runner = web.AppRunner(app)
-        await self.runner.setup()
-        site = web.TCPSite(self.runner, host="0.0.0.0", port=port)
-        await site.start()
+        self.server = await asyncio.start_server(self._handle, host="0.0.0.0", port=port)
 
     async def stop(self) -> None:
-        if self.runner:
-            await self.runner.cleanup()
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()

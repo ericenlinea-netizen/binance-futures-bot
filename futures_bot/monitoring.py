@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-
-import aiohttp
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from futures_bot.config import Settings
 from futures_bot.models import AccountState, TradeSignal
@@ -20,14 +22,23 @@ class TelegramNotifier:
         self.token = settings.telegram_token
         self.chat_id = settings.telegram_chat_id
 
+    def _send_sync(self, message: str) -> None:
+        if not self.token or not self.chat_id:
+            return
+        body = urlencode({"chat_id": self.chat_id, "text": message}).encode()
+        request = Request(
+            url=f"https://api.telegram.org/bot{self.token}/sendMessage",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            json.loads(response.read().decode())
+
     async def send(self, message: str) -> None:
         if not self.token or not self.chat_id:
             return
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            await session.post(
-                f"https://api.telegram.org/bot{self.token}/sendMessage",
-                data={"chat_id": self.chat_id, "text": message},
-            )
+        await asyncio.to_thread(self._send_sync, message)
 
 
 class Monitor:
