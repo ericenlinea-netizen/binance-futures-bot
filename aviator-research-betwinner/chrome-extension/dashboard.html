@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aviator Research Console</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #f4f4f5; background: radial-gradient(circle at top, rgba(34,197,94,0.12), transparent 28%), linear-gradient(180deg, #09090b, #050508); }
+    .shell { max-width: 1280px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+    .hero, .panel { background: linear-gradient(180deg, #17171c, #101015); border: 1px solid rgba(255,255,255,0.08); border-radius: 22px; box-shadow: 0 20px 80px rgba(0,0,0,0.25); }
+    .hero { padding: 24px; display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; }
+    .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.28em; color: #8b8b94; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { margin-top: 8px; font-size: 34px; font-weight: 900; letter-spacing: -0.04em; }
+    .muted { color: #a1a1aa; line-height: 1.55; }
+    .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    button { border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 12px 16px; font: inherit; font-weight: 700; cursor: pointer; transition: 0.2s ease; }
+    button:hover { transform: translateY(-1px); }
+    .primary { background: #22c55e; color: #05130a; }
+    .secondary { background: #18181b; color: #fafafa; }
+    .danger { background: #ef4444; color: white; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .grid-2 { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; }
+    .exec-grid { display: grid; grid-template-columns: 1.35fr repeat(4, 1fr); gap: 14px; }
+    .panel { padding: 18px; }
+    .stat { padding: 16px; border-radius: 18px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+    .exec-main { padding: 20px; border-radius: 22px; background: linear-gradient(135deg, rgba(34,197,94,0.14), rgba(56,189,248,0.1)); border: 1px solid rgba(255,255,255,0.08); }
+    .exec-kicker { font-size: 11px; text-transform: uppercase; letter-spacing: 0.22em; color: #8b8b94; }
+    .exec-row { display: flex; justify-content: space-between; gap: 18px; align-items: end; flex-wrap: wrap; }
+    .exec-title { font-size: 44px; font-weight: 900; letter-spacing: -0.05em; margin-top: 10px; }
+    .exec-note { margin-top: 10px; color: #a1a1aa; font-size: 14px; max-width: 560px; line-height: 1.5; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.06); color: #d4d4d8; font-size: 12px; font-weight: 700; }
+    .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; color: #8b8b94; }
+    .value { font-size: 34px; font-weight: 900; margin-top: 8px; letter-spacing: -0.04em; }
+    .sub { margin-top: 6px; color: #8b8b94; font-size: 13px; }
+    .bars, .rules { display: grid; gap: 14px; margin-top: 16px; }
+    .bar-track { margin-top: 6px; height: 12px; background: rgba(255,255,255,0.05); border-radius: 999px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #38bdf8, #22c55e); }
+    .sparkline { display: flex; align-items: end; gap: 4px; height: 140px; padding: 10px 0 2px; }
+    .sparkbar { flex: 1; min-width: 6px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, #38bdf8, #22c55e); opacity: 0.95; }
+    .sparkbar.loss { background: linear-gradient(180deg, #fb7185, #ef4444); }
+    .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 14px; }
+    th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; color: #8b8b94; }
+    .table-scroll { max-height: 620px; overflow: auto; margin-top: 14px; padding-right: 4px; }
+    details.panel summary { list-style: none; cursor: pointer; font-weight: 800; font-size: 18px; }
+    details.panel summary::-webkit-details-marker { display: none; }
+    .detail-stack { display: grid; gap: 18px; margin-top: 18px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .hit { color: #4ade80; font-weight: 700; }
+    .miss { color: #f87171; font-weight: 700; }
+    .good { color: #4ade80; }
+    .bad { color: #f87171; }
+    .warn { color: #facc15; }
+    .status { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: #a1a1aa; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 18px rgba(34,197,94,0.6); }
+    @media (max-width: 980px) { .grid-4, .grid-2, .exec-grid { grid-template-columns: 1fr; } .exec-title { font-size: 36px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Consola de investigación</div>
+        <h1>Aviator Research Betwinner</h1>
+        <p class="muted" style="margin-top:10px;max-width:760px;">Panel para seguir la muestra en vivo, evaluar hipótesis de entrada a 1.5x y exportar el historial sin mezclarlo con tu otro proyecto.</p>
+      </div>
+      <div>
+        <div class="status"><span class="dot"></span><span id="live-status">Esperando datos</span></div>
+        <div class="hero-actions" style="margin-top:12px;">
+          <button class="secondary" id="refresh-btn">Actualizar</button>
+          <button class="primary" id="export-json-btn">Exportar JSON</button>
+          <button class="primary" id="export-csv-btn">Exportar CSV</button>
+          <button class="secondary" id="export-report-btn">Exportar reporte</button>
+          <button class="danger" id="clear-btn">Borrar datos</button>
+        </div>
+      </div>
+    </section>
+    <section class="exec-grid">
+      <div class="exec-main">
+        <div class="exec-kicker">Panel Ejecutivo</div>
+        <div class="exec-row">
+          <div>
+            <div class="exec-title" id="exec-decision">ESPERAR</div>
+            <div class="exec-note" id="exec-summary">La estrategia todavía no ve una ventaja suficientemente sólida para activar una entrada.</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="pill" id="exec-mode">Modo BLOQUEADO</div>
+          </div>
+        </div>
+      </div>
+      <div class="stat"><div class="label">Confianza actual</div><div class="value" id="exec-confidence">0%</div><div class="sub">Fuerza actual de la señal robusta</div></div>
+      <div class="stat"><div class="label">Win rate entradas</div><div class="value" id="exec-win-rate">0.0%</div><div class="sub">Desempeño histórico de entradas</div></div>
+      <div class="stat"><div class="label">Última entrada</div><div class="value" id="exec-last-result">-</div><div class="sub" id="exec-last-note">Todavía no hay entradas registradas</div></div>
+      <div class="stat"><div class="label">Readiness</div><div class="value" id="exec-readiness">0%</div><div class="sub">Listo operativo del modelo premium</div></div>
+    </section>
+    <section class="grid-4">
+      <div class="stat"><div class="label">Entradas detectadas</div><div class="value" id="entry-total">0</div><div class="sub">Veces que la estrategia robusta habría entrado</div></div>
+      <div class="stat"><div class="label">Entradas ganadas</div><div class="value" id="entry-wins">0</div><div class="sub">Rondas que sí alcanzaron 1.5x</div></div>
+      <div class="stat"><div class="label">Win rate entradas</div><div class="value" id="entry-win-rate">0.0%</div><div class="sub">Precisión histórica de la estrategia</div></div>
+      <div class="stat"><div class="label">ROI por entrada</div><div class="value" id="entry-roi">0.00u</div><div class="sub">Promedio neto por cada señal generada</div></div>
+    </section>
+    <section class="grid-4">
+      <div class="stat"><div class="label">Atlas Hybrid</div><div class="value" id="strict-total">0</div><div class="sub" id="strict-note">Referencia operativa principal</div></div>
+      <div class="stat"><div class="label">Base Balanced</div><div class="value" id="balanced-total">0</div><div class="sub" id="balanced-note">Aporte limpio al Hybrid</div></div>
+      <div class="stat"><div class="label">Scout limpio</div><div class="value" id="scout-total">0</div><div class="sub" id="scout-note">Aporte de frecuencia filtrada</div></div>
+      <div class="stat"><div class="label">Fuente dominante</div><div class="value" id="best-mode">-</div><div class="sub" id="best-mode-note">Origen más frecuente dentro de Hybrid</div></div>
+    </section>
+    <section class="panel">
+      <div class="eyebrow">Lectura Hybrid</div>
+      <h2 style="margin-top:6px;">Por qué Hybrid entra o espera</h2>
+      <p class="muted" style="margin-top:10px;">Resumen rápido del estado actual de Hybrid y de las dos fuentes que lo alimentan, para entender si el contexto ya está listo para operar o todavía solo sirve como observación.</p>
+      <div class="grid-2" style="margin-top:16px;">
+        <div id="mode-relationship-card"></div>
+        <div id="mode-reasons-card"></div>
+      </div>
+    </section>
+    <section class="grid-4">
+      <div class="stat"><div class="label">Entradas/hora Hybrid</div><div class="value" id="scout-per-hour">0.0</div><div class="sub">Cadencia operativa objetivo</div></div>
+      <div class="stat"><div class="label">Última hora</div><div class="value" id="scout-last-hour">0</div><div class="sub">Señales Hybrid recientes</div></div>
+      <div class="stat"><div class="label">Últimos 30 min</div><div class="value" id="scout-last-30m">0</div><div class="sub">Ritmo corto de señales</div></div>
+      <div class="stat"><div class="label">Objetivo práctico</div><div class="value">3-8</div><div class="sub">Entradas/hora esperadas en Hybrid</div></div>
+    </section>
+    <section class="grid-4">
+      <div class="stat"><div class="label">Total rondas</div><div class="value" id="stat-total">0</div><div class="sub">Base recolectada en esta extensión</div></div>
+      <div class="stat"><div class="label">Hit rate 1.5x</div><div class="value" id="stat-hit-rate">0.0%</div><div class="sub">Éxito si entraras siempre</div></div>
+      <div class="stat"><div class="label">Promedio</div><div class="value" id="stat-avg">0.00x</div><div class="sub">Multiplicador promedio observado</div></div>
+      <div class="stat"><div class="label">Racha baja actual</div><div class="value" id="stat-streak">0</div><div class="sub">Rondas seguidas por debajo de 1.5x</div></div>
+    </section>
+    <section class="panel"><div class="eyebrow">Hybrid</div><h2 style="margin-top:6px;">Últimos 50 registros Hybrid</h2><p class="muted" style="margin-top:10px;">Punto único de referencia para operar, combinando limpieza de Balanced con frecuencia útil de Scout.</p><div class="grid-4" id="scout-summary" style="margin-top:16px;"></div><div class="table-scroll" id="scout-table"></div><div class="eyebrow" style="margin-top:18px;">Reporte diario</div><p class="muted" style="margin-top:8px;">Ganadas, perdidas y total acumulado por día para Hybrid.</p><div class="table-scroll" style="max-height:300px;" id="scout-daily-table"></div></section>
+    <section class="panel"><div class="eyebrow">Ciclos Hybrid</div><h2 style="margin-top:6px;">Resumen por bloques de 50 registros Hybrid</h2><p class="muted" style="margin-top:10px;">Aquí solo se muestran ciclos cerrados y congelados de Hybrid. El ciclo en curso se ve aparte para que el histórico no se mueva.</p><div class="grid-4" id="cycle-open-summary" style="margin-top:16px;"></div><div class="table-scroll" id="cycles-table"></div></section>
+    <details class="panel">
+      <summary>Análisis detallado opcional</summary>
+      <div class="detail-stack">
+        <section class="grid-2">
+          <div class="panel"><div class="eyebrow">Balanced</div><h2 style="margin-top:6px;">Últimos 50 aportes Balanced</h2><p class="muted" style="margin-top:10px;">Entradas limpias que alimentan el Hybrid como base principal.</p><div class="grid-4" id="balanced-summary" style="margin-top:16px;"></div><div class="table-scroll" id="balanced-table"></div><div class="eyebrow" style="margin-top:18px;">Reporte diario</div><p class="muted" style="margin-top:8px;">Ganadas, perdidas y total acumulado por día para Balanced.</p><div class="table-scroll" style="max-height:300px;" id="balanced-daily-table"></div></div>
+          <div class="panel"><div class="eyebrow">Scout limpio</div><h2 style="margin-top:6px;">Últimos 50 aportes Scout limpio</h2><p class="muted" style="margin-top:10px;">Exploración filtrada que solo entra al Hybrid cuando el contexto inmediato sigue limpio.</p><div class="grid-4" id="strict-summary" style="margin-top:16px;"></div><div class="table-scroll" id="strict-table"></div><div class="eyebrow" style="margin-top:18px;">Reporte diario</div><p class="muted" style="margin-top:8px;">Ganadas, perdidas y total acumulado por día para Scout limpio.</p><div class="table-scroll" style="max-height:300px;" id="strict-daily-table"></div></div>
+        </section>
+        <section class="grid-2"><div class="panel"><div class="eyebrow">Decisión actual</div><h2 style="margin-top:6px;">Momento estimado para entrada 1.5x</h2><div id="projection-card" style="margin-top:16px;"></div><div class="rules" id="projection-factors" style="margin-top:16px;"></div></div><div class="panel"><div class="eyebrow">Ejecución actual</div><h2 style="margin-top:6px;">Marco operativo y semáforo</h2><div id="strategy-card" style="margin-top:16px;"></div><div id="premium-card" style="margin-top:16px;"></div></div></section>
+        <section class="grid-2"><div class="panel"><div class="eyebrow">Checklist</div><h2 style="margin-top:6px;">Condiciones antes de entrar</h2><div class="rules" id="strategy-checks"></div></div><div class="panel"><div class="eyebrow">Guardrails</div><h2 style="margin-top:6px;">Riesgos y validaciones</h2><div class="rules" id="guardrail-cards"></div></div></section>
+        <section class="grid-2"><div class="panel"><div class="eyebrow">Validación</div><h2 style="margin-top:6px;">Robustez por bloques</h2><p class="muted" style="margin-top:10px;">Evalúa si la estrategia conserva calidad fuera de un solo tramo del histórico.</p><div id="validation-table"></div><div class="rules" id="robustness-cards" style="margin-top:16px;"></div></div><div class="panel"><div class="eyebrow">Contexto del mercado</div><h2 style="margin-top:6px;">Distribución y ventanas</h2><div class="bars" id="distribution-bars"></div><div class="rules" id="window-summary" style="margin-top:16px;"></div><div class="eyebrow" style="margin-top:20px;">Umbrales Atlas</div><h2 style="margin-top:6px;">Aprendizaje adaptativo actual</h2><div class="rules" id="atlas-thresholds" style="margin-top:16px;"></div></div></section>
+        <section class="grid-2"><div class="panel"><div class="eyebrow">Auditoría</div><h2 style="margin-top:6px;">Diagnóstico de muestra y sobreajuste</h2><div id="audit-table"></div></div><div class="panel"><div class="eyebrow">Score bands</div><h2 style="margin-top:6px;">Rendimiento por bandas del score</h2><p class="muted" style="margin-top:10px;">Mide si los contextos con score alto realmente convierten mejor que los contextos medios o fríos.</p><div id="score-bands-table"></div></div></section>
+        <section class="grid-2"><div class="panel"><div class="eyebrow">Walk-forward</div><h2 style="margin-top:6px;">Prueba fuera de muestra</h2><p class="muted" style="margin-top:10px;">Atlas se calibra en un tramo y luego se prueba en otro, para reducir sobreajuste sobre la misma muestra.</p><div id="walkforward-table"></div></div><div class="panel"><div class="eyebrow">Regímenes</div><h2 style="margin-top:6px;">Rendimiento por tipo de contexto</h2><p class="muted" style="margin-top:10px;">Mide dónde Atlas realmente rinde mejor y dónde conviene seguir bloqueando entradas.</p><div id="regime-table"></div></div></section>
+        <section class="grid-2"><div class="panel"><div class="eyebrow">Equity Curve</div><h2 style="margin-top:6px;">Evolución del P&L de Atlas</h2><p class="muted" style="margin-top:10px;">Curva acumulada de las entradas aprobadas por Atlas, útil para ver ritmo, rachas y presión.</p><div id="equity-summary"></div><div id="equity-chart"></div></div><div class="panel"><div class="eyebrow">Resumen automático</div><h2 style="margin-top:6px;">Reporte ejecutivo de Atlas</h2><p class="muted" style="margin-top:10px;">Síntesis automática del estado actual del sistema, sus fortalezas y lo que todavía no convence.</p><div class="rules" id="report-cards"></div></div></section>
+        <section class="grid-2"><div class="panel"><div class="eyebrow">Oportunidades recientes</div><h2 style="margin-top:6px;">Últimos contextos evaluados</h2><p class="muted" style="margin-top:10px;">Sirve para estudiar si el score realmente anticipa mejores entradas.</p><div id="opportunity-table"></div></div><div class="panel"><div class="eyebrow">Bitácora de estrategia</div><h2 style="margin-top:6px;">Últimas señales del modelo robusto</h2><p class="muted" style="margin-top:10px;">Aquí se ve cuándo la estrategia habría autorizado entrada y cómo terminó la ronda siguiente.</p><div id="strategy-log-table"></div></div></section>
+        <section class="panel"><div class="eyebrow">Reglas experimentales</div><h2 style="margin-top:6px;">Evaluación de entradas a 1.5x</h2><p class="muted" style="margin-top:10px;">Cada regla se prueba sobre la muestra actual con una apuesta base de 1 unidad. Ganar suma +0.5u y perder resta -1u.</p><div id="rules-table"></div></section>
+        <section class="panel"><div class="eyebrow">Bitácora</div><h2 style="margin-top:6px;">Últimas rondas capturadas</h2><div id="rounds-table"></div></section>
+      </div>
+    </details>
+  </main>
+  <script src="dashboard.js"></script>
+</body>
+</html>

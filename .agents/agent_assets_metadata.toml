@@ -1,0 +1,80 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "ocfiNI043cCxbDTh7fyhD"
+uri = "file://railway_bot.zip"
+type = "unspecified"
+title = "railway_bot.zip — Bot actualizado con Paper Trading"
+
+[[outputs]]
+id = "tGxxJKzTkOcXo8Mn3mbn7"
+uri = "file://aviator-extension.zip"
+type = "unspecified"
+title = "Extensión v1.1.0 — Auto-captura mejorada"
+
+[[outputs]]
+id = "si922Yr_e0u647Wf7o16x"
+uri = "file://chrome-extension/aviator-signal-bot-v1.2.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v1.2.0 — Binary Scanner"
+
+[[outputs]]
+id = "clzcBDqRKQ2uZR2BjzaUn"
+uri = "file://chrome-extension/aviator-signal-bot-v1.3.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v1.3.0 — Cobertura total de frames"
+
+[[outputs]]
+id = "B-PZPWkBD_rNUZITOcVyF"
+uri = "file://chrome-extension/aviator-signal-bot-v1.4.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v1.4.0 — Triple intercepción WebSocket"
+
+[[outputs]]
+id = "xVhi8gXGgWYQ5t8YT9GOw"
+uri = "file://chrome-extension/aviator-signal-bot-v1.5.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v1.5.0 — Worker + postMessage interception"
+
+[[outputs]]
+id = "f_UtAlE-zAkeOciREP53J"
+uri = "file://chrome-extension/aviator-signal-bot-v2.0.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v2.0.0 — Fix errores contexto"
+
+[[outputs]]
+id = "8xTbe1GvuYn6AaQ0rS0B1"
+uri = "file://chrome-extension/aviator-signal-bot-v2.1.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v2.1.0 — Captura iframes cross-origin"
+
+[[outputs]]
+id = "GPlbX3k_vy51_qkSUD8ru"
+uri = "file://chrome-extension/aviator-signal-bot-v2.2.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v2.2.0 — Decoder Spribe nativo"
+
+[[outputs]]
+id = "iWGu4_aVuvlqZsS8miSUY"
+uri = "file://chrome-extension/aviator-signal-bot-v2.3.0.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v2.3.0 — State machine crash detection"
+
+[[outputs]]
+id = "OuhjH93cl-GhKVEM1xY3A"
+uri = "file://chrome-extension/aviator-signal-bot-v2.3.1.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v2.3.1 — Sin cap de 200x + auto-URL"
+
+[[outputs]]
+id = "k3yRBWCCBL7-QYZxvDJ0O"
+uri = "file://chrome-extension/aviator-signal-bot-v2.3.2.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v2.3.2 — Sin duplicados (fix definitivo)"
+
+[[outputs]]
+id = "-S-FMd80T0vNJHnoRRl1z"
+uri = "file://chrome-extension/aviator-signal-bot-v2.3.3.zip"
+type = "unspecified"
+title = "Aviator Signal Bot v2.3.3 — CDP siempre registra"

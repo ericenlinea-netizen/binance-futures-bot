@@ -1,0 +1,337 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Aviator Signal Bot API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: rounds
+    description: Aviator round management
+  - name: signals
+    description: Signal analysis
+  - name: stats
+    description: Statistics
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /rounds:
+    post:
+      operationId: createRound
+      tags: [rounds]
+      summary: Register a new Aviator round result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoundRequest"
+      responses:
+        "201":
+          description: Round registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoundResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: getRounds
+      tags: [rounds]
+      summary: Get paginated round history
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Round history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoundsListResponse"
+
+  /signal:
+    get:
+      operationId: getSignal
+      tags: [signals]
+      summary: Get current signal recommendation
+      responses:
+        "200":
+          description: Current signal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignalResponse"
+
+  /signals:
+    get:
+      operationId: getSignalHistory
+      tags: [signals]
+      summary: Get past signal logs with outcomes
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: Signal history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignalHistoryResponse"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      summary: Get aggregated statistics
+      responses:
+        "200":
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    CreateRoundRequest:
+      type: object
+      properties:
+        multiplier:
+          type: number
+          minimum: 1.0
+          description: The crash multiplier for this round
+      required:
+        - multiplier
+
+    RoundResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        multiplier:
+          type: number
+        crashedAt:
+          type: string
+        createdAt:
+          type: string
+        signal:
+          $ref: "#/components/schemas/SignalResponse"
+        galeAlert:
+          type: string
+          nullable: true
+          description: Non-null when gale should be applied
+      required:
+        - id
+        - multiplier
+        - crashedAt
+        - createdAt
+        - signal
+
+    RoundsListResponse:
+      type: object
+      properties:
+        rounds:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoundItem"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - rounds
+        - total
+        - page
+        - limit
+
+    RoundItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        multiplier:
+          type: number
+        crashedAt:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - multiplier
+        - crashedAt
+        - createdAt
+
+    SignalResponse:
+      type: object
+      properties:
+        signal:
+          type: string
+          enum: [ENTER, WAIT]
+        confidence:
+          type: number
+          description: Confidence score 0-100
+        streak:
+          type: integer
+          description: Consecutive rounds below 1.5x
+        hitRate10:
+          type: number
+          description: Hit rate over last 10 rounds
+        hitRate20:
+          type: number
+          description: Hit rate over last 20 rounds
+        hitRate50:
+          type: number
+          description: Hit rate over last 50 rounds
+        totalRounds:
+          type: integer
+        reason:
+          type: string
+      required:
+        - signal
+        - confidence
+        - streak
+        - hitRate10
+        - hitRate20
+        - hitRate50
+        - totalRounds
+        - reason
+
+    StatsResponse:
+      type: object
+      properties:
+        totalRounds:
+          type: integer
+        hitRate:
+          type: number
+          description: Overall percentage of rounds reaching 1.5x
+        avgMultiplier:
+          type: number
+        bestStreak:
+          type: integer
+          description: Best consecutive wins (rounds >= 1.5x)
+        worstStreak:
+          type: integer
+          description: Worst consecutive losses (rounds < 1.5x)
+        signalAccuracy:
+          type: number
+          description: Overall accuracy (WIN_DIRECT + WIN_GALE) / total resolved ENTER signals
+        totalEnterSignals:
+          type: integer
+        winDirect:
+          type: integer
+          description: Wins on first entry (Ganadas)
+        winGale:
+          type: integer
+          description: Wins on second entry / gale (Gale)
+        lossCount:
+          type: integer
+          description: Total losses after both attempts (Perdidas)
+        recentMultipliers:
+          type: array
+          items:
+            type: number
+          description: Last 50 multipliers for chart
+      required:
+        - totalRounds
+        - hitRate
+        - avgMultiplier
+        - bestStreak
+        - worstStreak
+        - signalAccuracy
+        - totalEnterSignals
+        - winDirect
+        - winGale
+        - lossCount
+        - recentMultipliers
+
+    SignalHistoryItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        roundId:
+          type: integer
+          nullable: true
+        signalType:
+          type: string
+          enum: [ENTER, WAIT]
+        confidence:
+          type: number
+        outcome:
+          type: string
+          enum: [WIN, LOSS, PENDING]
+        galeAttempt:
+          type: integer
+          description: 0=first entry, 1=gale
+        createdAt:
+          type: string
+        resolvedAt:
+          type: string
+          nullable: true
+      required:
+        - id
+        - signalType
+        - confidence
+        - outcome
+        - galeAttempt
+        - createdAt
+
+    SignalHistoryResponse:
+      type: object
+      properties:
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/SignalHistoryItem"
+      required:
+        - signals
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: string
+      required:
+        - error

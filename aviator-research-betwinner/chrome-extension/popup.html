@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aviator Research Betwinner</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      width: 360px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #0b0b0d;
+      color: #f4f4f5;
+    }
+    .wrap {
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+    .card {
+      background: linear-gradient(180deg, #17171b, #111114);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .eyebrow {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      color: #8b8b94;
+      margin-bottom: 6px;
+    }
+    h1, h2, p { margin: 0; }
+    h1 {
+      font-size: 19px;
+      font-weight: 800;
+    }
+    h2 {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .sub {
+      color: #a1a1aa;
+      font-size: 12px;
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .stat {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 10px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 22px;
+      margin-top: 4px;
+    }
+    .label {
+      font-size: 11px;
+      color: #9a9aa3;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+    input, button {
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      font: inherit;
+    }
+    input {
+      flex: 1;
+      padding: 10px 12px;
+      background: #09090b;
+      color: #fafafa;
+    }
+    button {
+      padding: 10px 12px;
+      background: #22c55e;
+      color: #04110a;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: #18181b;
+      color: #fafafa;
+    }
+    button.warn {
+      background: #ef4444;
+      color: white;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .dist {
+      display: grid;
+      gap: 8px;
+    }
+    .bar {
+      height: 10px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .bar > span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #38bdf8, #22c55e);
+    }
+    .recent {
+      max-height: 180px;
+      overflow: auto;
+      display: grid;
+      gap: 6px;
+    }
+    .round {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.03);
+    }
+    .hit { color: #4ade80; font-weight: 700; }
+    .miss { color: #f87171; font-weight: 700; }
+    .status {
+      font-size: 12px;
+      color: #a1a1aa;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <div class="eyebrow">Proyecto aparte</div>
+      <h1>Aviator Research Betwinner</h1>
+      <p class="sub">Extension independiente para recolectar rondas, estudiar entradas a 1.5x y exportar la muestra sin mezclarla con tu otro proyecto.</p>
+    </section>
+
+    <section class="card">
+      <h2>Resumen</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="label">Total rondas</div>
+          <strong id="total-rounds">0</strong>
+        </div>
+        <div class="stat">
+          <div class="label">Hit rate 1.5x</div>
+          <strong id="hit-rate">0%</strong>
+        </div>
+        <div class="stat">
+          <div class="label">Promedio</div>
+          <strong id="avg-mult">0.00x</strong>
+        </div>
+        <div class="stat">
+          <div class="label">Racha baja</div>
+          <strong id="low-streak">0</strong>
+        </div>
+      </div>
+      <p class="sub" id="status-text">Esperando rondas...</p>
+    </section>
+
+    <section class="card">
+      <h2>Agregar ronda manual</h2>
+      <div class="row">
+        <input id="manual-input" type="number" min="1" step="0.01" placeholder="Ej: 1.67" />
+        <button id="manual-add">Guardar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Distribucion</h2>
+      <div class="dist" id="distribution"></div>
+    </section>
+
+    <section class="card">
+      <h2>Ultimas rondas</h2>
+      <div class="recent" id="recent-rounds"></div>
+    </section>
+
+    <section class="card">
+      <h2>Exportar o limpiar</h2>
+      <div class="actions">
+        <button class="secondary" id="open-dashboard">Abrir consola</button>
+        <button class="secondary" id="export-json">Exportar JSON</button>
+        <button class="secondary" id="export-csv">Exportar CSV</button>
+        <button class="warn" id="clear-data">Borrar datos</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,423 @@
+import requests
+import time
+import math
+from datetime import datetime
+
+# ================= TELEGRAM =================
+TOKEN = "8772294732:AAGU62SChVJfmwf9RpweG-inBGAjIDlMwms"
+CHAT_ID = "5019372975"
+
+def enviar_alerta(msg):
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}
+        )
+    except:
+        pass
+
+# ================= CONFIG =================
+symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "ADAUSDT", "XRPUSDT"]
+
+estado = False
+entrada = 0
+max_precio = 0
+symbol_activo = None
+
+racha_perdidas = 0
+ganancia_acumulada = 0
+operaciones_totales = 0
+operaciones_ganadoras = 0
+
+enviar_alerta("📊 <b>BOT CUANTITATIVO v2 ACTIVO</b>\n⏰ " + datetime.now().strftime("%H:%M:%S"))
+
+# ================= INDICADORES =================
+
+def get_klines(symbol, interval, limit=50):
+    data = requests.get(
+        f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}",
+        timeout=10
+    ).json()
+    cierres = [float(x[4]) for x in data]
+    altos   = [float(x[2]) for x in data]
+    bajos   = [float(x[3]) for x in data]
+    volumenes = [float(x[5]) for x in data]
+    return cierres, altos, bajos, volumenes
+
+def ema(valores, n):
+    k = 2 / (n + 1)
+    resultado = [valores[0]]
+    for v in valores[1:]:
+        resultado.append(v * k + resultado[-1] * (1 - k))
+    return resultado
+
+def rsi(cierres, n=14):
+    ganancias, perdidas = [], []
+    for i in range(1, len(cierres)):
+        diff = cierres[i] - cierres[i-1]
+        ganancias.append(max(diff, 0))
+        perdidas.append(max(-diff, 0))
+    if len(ganancias) < n:
+        return 50
+    ag = sum(ganancias[-n:]) / n
+    ap = sum(perdidas[-n:]) / n
+    if ap == 0:
+        return 100
+    rs = ag / ap
+    return 100 - (100 / (1 + rs))
+
+def macd(cierres):
+    ema12 = ema(cierres, 12)
+    ema26 = ema(cierres, 26)
+    linea = [e12 - e26 for e12, e26 in zip(ema12, ema26)]
+    senal = ema(linea, 9)
+    histograma = [l - s for l, s in zip(linea, senal)]
+    return linea[-1], senal[-1], histograma[-1], histograma[-2]
+
+def atr(altos, bajos, cierres, n=14):
+    trs = []
+    for i in range(1, len(cierres)):
+        tr = max(
+            altos[i] - bajos[i],
+            abs(altos[i] - cierres[i-1]),
+            abs(bajos[i] - cierres[i-1])
+        )
+        trs.append(tr)
+    if len(trs) < n:
+        return cierres[-1] * 0.002
+    return sum(trs[-n:]) / n
+
+def bollinger(cierres, n=20, dev=2):
+    if len(cierres) < n:
+        return cierres[-1], cierres[-1] * 1.01, cierres[-1] * 0.99
+    ventana = cierres[-n:]
+    media = sum(ventana) / n
+    std = math.sqrt(sum((x - media)**2 for x in ventana) / n)
+    return media, media + dev * std, media - dev * std
+
+def volumen_alto(volumenes, n=20):
+    if len(volumenes) < n:
+        return False
+    vol_actual = volumenes[-1]
+    vol_promedio = sum(volumenes[-n:-1]) / (n - 1)
+    return vol_actual > (vol_promedio * 1.2)
+
+def tendencia_ema(cierres):
+    e9  = ema(cierres, 9)[-1]
+    e21 = ema(cierres, 21)[-1]
+    return e9 > e21
+
+def slope_ema(cierres, n=9):
+    e = ema(cierres, n)
+    return e[-1] > e[-3]
+
+def detectar_pullback_mejorado(cierres):
+    subida   = cierres[-6] < cierres[-5] < cierres[-4]
+    retroceso = cierres[-4] > cierres[-3] >= cierres[-2]
+    retoma   = cierres[-1] > cierres[-2]
+    e9 = ema(cierres, 9)
+    soporte_ema = cierres[-1] >= e9[-1] * 0.999
+    return subida and retroceso and retoma and soporte_ema
+
+def patron_vela_alcista(cierres, altos, bajos):
+    o = cierres[-2]
+    c = cierres[-1]
+    h = altos[-1]
+    l = bajos[-1]
+    cuerpo = abs(c - o)
+    rango = h - l
+    if rango == 0:
+        return False
+    mecha_inf = (min(o, c) - l) / rango
+    return c > o and mecha_inf > 0.3 and cuerpo > rango * 0.4
+
+def divergencia_rsi(cierres, n=14):
+    rsi_actual = rsi(cierres, n)
+    rsi_previo = rsi(cierres[:-3], n)
+    precio_baja = cierres[-1] < cierres[-4]
+    rsi_sube    = rsi_actual > rsi_previo
+    return precio_baja and rsi_sube
+
+# ================= SCORE MEJORADO =================
+
+def score_completo(cierres, altos, bajos, volumenes, precio):
+    s = 0
+    detalles = []
+
+    # Tendencia EMA (peso 2)
+    if tendencia_ema(cierres):
+        s += 2
+        detalles.append("EMA✅")
+    else:
+        detalles.append("EMA❌")
+
+    # Slope EMA (tendencia acelerando)
+    if slope_ema(cierres):
+        s += 1
+        detalles.append("Slope✅")
+
+    # Pullback con soporte EMA (peso 2)
+    if detectar_pullback_mejorado(cierres):
+        s += 2
+        detalles.append("PB✅")
+    else:
+        detalles.append("PB❌")
+
+    # RSI en zona óptima 45-68
+    r = rsi(cierres)
+    if 45 <= r <= 68:
+        s += 2
+        detalles.append(f"RSI{r:.0f}✅")
+    elif r > 68:
+        s -= 1
+        detalles.append(f"RSI{r:.0f}⚠️")
+    else:
+        detalles.append(f"RSI{r:.0f}❌")
+
+    # MACD positivo y cruzando
+    linea, senal, hist_actual, hist_prev = macd(cierres)
+    if linea > senal:
+        s += 1
+        detalles.append("MACD✅")
+    if hist_actual > 0 and hist_actual > hist_prev:
+        s += 1
+        detalles.append("MACDhist✅")
+
+    # Volumen confirmando
+    if volumen_alto(volumenes):
+        s += 2
+        detalles.append("Vol✅")
+    else:
+        detalles.append("Vol❌")
+
+    # Bollinger: precio sobre banda media
+    bb_media, bb_sup, bb_inf = bollinger(cierres)
+    if cierres[-1] > bb_media and cierres[-2] <= bb_media:
+        s += 1
+        detalles.append("BB-cruce✅")
+    elif cierres[-1] > bb_media:
+        detalles.append("BB-sobre✅")
+
+    # Patrón de vela alcista
+    if patron_vela_alcista(cierres, altos, bajos):
+        s += 1
+        detalles.append("Vela✅")
+
+    # Momentum reciente
+    cambio_5 = (cierres[-1] - cierres[-5]) / cierres[-5]
+    if 0.0005 < cambio_5 < 0.01:
+        s += 1
+        detalles.append("Mom✅")
+
+    return s, detalles, r
+
+# ================= MULTI-TIMEFRAME =================
+
+def confirmar_multitf(symbol):
+    c1m, a1m, b1m, v1m = get_klines(symbol, "1m", 50)
+    c5m, a5m, b5m, v5m = get_klines(symbol, "5m", 50)
+    c15m, _, _, _ = get_klines(symbol, "15m", 30)
+
+    tf1 = tendencia_ema(c1m)
+    tf5 = tendencia_ema(c5m)
+    tf15 = tendencia_ema(c15m)
+
+    rsi_1m = rsi(c1m)
+    rsi_5m = rsi(c5m)
+
+    ok = tf1 and tf5 and tf15 and rsi_1m < 75 and rsi_5m < 72
+    return ok, c1m, a1m, b1m, v1m
+
+# ================= LOOP =================
+while True:
+    try:
+
+        # ================= GESTIÓN DE POSICIÓN =================
+        if estado:
+            cierres, altos, bajos, volumenes = get_klines(symbol_activo, "1m", 20)
+            precio = cierres[-1]
+
+            ganancia = precio - entrada
+            ganancia_pct = (ganancia / entrada) * 100
+
+            if precio > max_precio:
+                max_precio = precio
+
+            atr_val = atr(altos, bajos, cierres)
+
+            sl_estructura = min(cierres[-5:])
+            sl_atr        = entrada - (1.5 * atr_val)
+            sl_maximo     = entrada - (0.002 * entrada)
+            sl = max(sl_estructura, sl_atr, sl_maximo)
+
+            riesgo = entrada - sl
+            tp1 = entrada + (riesgo * 1.5)
+            tp2 = entrada + (riesgo * 2.5)
+
+            trailing_pct = 0.4 if ganancia_pct > 0.3 else 0.5
+            trailing = (max_precio - entrada) * trailing_pct
+
+            rsi_actual = rsi(cierres)
+            salida_rsi = rsi_actual > 78
+
+            if precio <= sl:
+                operaciones_totales += 1
+                racha_perdidas += 1
+                msg = (
+                    f"🛑 <b>SL — {symbol_activo}</b>\n"
+                    f"Precio: {precio:.4f}\n"
+                    f"PnL: {ganancia:.4f} ({ganancia_pct:.3f}%)\n"
+                    f"RSI: {rsi_actual:.1f}\n"
+                    f"⚡ Racha pérdidas: {racha_perdidas}"
+                )
+                enviar_alerta(msg)
+                estado = False
+
+            elif precio >= tp2:
+                operaciones_totales += 1
+                operaciones_ganadoras += 1
+                ganancia_acumulada += ganancia
+                racha_perdidas = 0
+                wr = (operaciones_ganadoras / operaciones_totales) * 100
+                msg = (
+                    f"💰 <b>TP2 — {symbol_activo}</b>\n"
+                    f"Precio: {precio:.4f}\n"
+                    f"PnL: +{ganancia:.4f} ({ganancia_pct:.3f}%)\n"
+                    f"WinRate: {wr:.1f}%"
+                )
+                enviar_alerta(msg)
+                estado = False
+
+            elif precio >= tp1 and salida_rsi:
+                operaciones_totales += 1
+                operaciones_ganadoras += 1
+                ganancia_acumulada += ganancia
+                racha_perdidas = 0
+                msg = (
+                    f"💰 <b>TP1+RSI — {symbol_activo}</b>\n"
+                    f"Precio: {precio:.4f}\n"
+                    f"PnL: +{ganancia:.4f} ({ganancia_pct:.3f}%)\n"
+                    f"RSI sobrecompra: {rsi_actual:.1f}"
+                )
+                enviar_alerta(msg)
+                estado = False
+
+            elif max_precio - precio >= trailing and ganancia > 0:
+                operaciones_totales += 1
+                operaciones_ganadoras += 1
+                ganancia_acumulada += ganancia
+                racha_perdidas = 0
+                msg = (
+                    f"💰 <b>TRAILING — {symbol_activo}</b>\n"
+                    f"Precio: {precio:.4f}\n"
+                    f"PnL: +{ganancia:.4f} ({ganancia_pct:.3f}%)\n"
+                    f"Max alcanzado: {max_precio:.4f}"
+                )
+                enviar_alerta(msg)
+                estado = False
+
+            time.sleep(5)
+            continue
+
+        # ================= PROTECCIONES =================
+        if ganancia_acumulada >= 5:
+            enviar_alerta("🛑 <b>PROTECCIÓN DE GANANCIA ACTIVADA</b>\nPausa 2 min")
+            time.sleep(120)
+            ganancia_acumulada = 0
+            continue
+
+        if racha_perdidas >= 2:
+            enviar_alerta(f"⛔ <b>PAUSA POR RACHA</b>\n{racha_perdidas} pérdidas seguidas\nEsperando 90s")
+            time.sleep(90)
+            racha_perdidas = 0
+            continue
+
+        # ================= FILTRO BTC MULTI-TF =================
+        btc_1m, _, _, _ = get_klines("BTCUSDT", "1m", 50)
+        btc_5m, _, _, _ = get_klines("BTCUSDT", "5m", 50)
+        btc_15m, _, _, _ = get_klines("BTCUSDT", "15m", 30)
+
+        btc_ok = tendencia_ema(btc_1m) and tendencia_ema(btc_5m) and tendencia_ema(btc_15m)
+        btc_rsi = rsi(btc_5m)
+
+        if not btc_ok or btc_rsi > 80:
+            time.sleep(5)
+            continue
+
+        mejor = None
+        mejor_score = 0
+        mejor_detalles = []
+        mejor_rsi = 0
+
+        # ================= SCAN DE MERCADO =================
+        for symbol in symbols:
+            try:
+                ok_tf, c1m, a1m, b1m, v1m = confirmar_multitf(symbol)
+
+                if not ok_tf:
+                    continue
+
+                precio = c1m[-1]
+
+                atr_val = atr(a1m, b1m, c1m)
+                if atr_val < precio * 0.0003:
+                    continue
+
+                if precio >= max(c1m[-10:]) * 0.9995:
+                    continue
+
+                s, detalles, r = score_completo(c1m, a1m, b1m, v1m, precio)
+
+                if s > mejor_score:
+                    mejor_score = s
+                    mejor = (symbol, precio, c1m, a1m, b1m, v1m)
+                    mejor_detalles = detalles
+                    mejor_rsi = r
+
+            except Exception as e:
+                continue
+
+        # ================= ENTRADA =================
+        if mejor and mejor_score >= 9:
+            symbol_temp, precio_temp, c1m, a1m, b1m, v1m = mejor
+
+            atr_val = atr(a1m, b1m, c1m)
+
+            sl_estructura = min(c1m[-5:])
+            sl_atr        = precio_temp - (1.5 * atr_val)
+            sl_maximo     = precio_temp - (0.002 * precio_temp)
+            sl = max(sl_estructura, sl_atr, sl_maximo)
+
+            riesgo = precio_temp - sl
+
+            if riesgo <= 0 or riesgo > (0.003 * precio_temp):
+                time.sleep(5)
+                continue
+
+            tp1 = precio_temp + (riesgo * 1.5)
+            tp2 = precio_temp + (riesgo * 2.5)
+            rr = (tp2 - precio_temp) / riesgo
+
+            symbol_activo = symbol_temp
+            entrada = precio_temp
+            max_precio = entrada
+            estado = True
+
+            detalles_str = " | ".join(mejor_detalles)
+            msg = (
+                f"🚀 <b>ENTRY — {symbol_activo}</b>\n"
+                f"💵 Precio: {entrada:.4f}\n"
+                f"🎯 Score: {mejor_score}/14\n"
+                f"📉 SL: {sl:.4f}\n"
+                f"🎯 TP1: {tp1:.4f}  TP2: {tp2:.4f}\n"
+                f"📊 R:R = 1:{rr:.1f}\n"
+                f"📈 RSI: {mejor_rsi:.1f}\n"
+                f"🔍 {detalles_str}"
+            )
+            enviar_alerta(msg)
+
+        time.sleep(5)
+
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Error: {e}")
+        time.sleep(5)

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aviator Signal Bot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      font-size: 13px;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1e3a5f, #1e293b);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #1e3a5f;
+    }
+
+    .logo {
+      width: 32px; height: 32px;
+      background: #2563eb;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+
+    .header-text h1 { font-size: 14px; font-weight: 700; }
+    .header-text p { font-size: 11px; color: #94a3b8; }
+
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      margin-left: auto;
+      background: #64748b;
+    }
+    .status-dot.active { background: #10b981; animation: pulse 2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .section { padding: 12px 14px; border-bottom: 1px solid #1e293b; }
+    .section-title {
+      font-size: 10px; font-weight: 600; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+    }
+
+    /* Signal Card */
+    .signal-card {
+      border-radius: 10px; padding: 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 0;
+    }
+    .signal-card.enter { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); }
+    .signal-card.wait { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.3); }
+    .signal-card.none { background: #1e293b; border: 1px solid #334155; }
+
+    .signal-label { font-size: 20px; font-weight: 900; letter-spacing: -0.5px; }
+    .signal-label.enter { color: #10b981; }
+    .signal-label.wait { color: #f59e0b; }
+    .signal-label.none { color: #475569; }
+
+    .signal-meta { text-align: right; }
+    .signal-meta .conf { font-size: 18px; font-weight: 700; }
+    .signal-meta .conf.enter { color: #10b981; }
+    .signal-meta .conf.wait { color: #f59e0b; }
+    .signal-meta .reason { font-size: 10px; color: #64748b; max-width: 140px; text-align: right; }
+
+    /* Stats row */
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .stat { background: #1e293b; border-radius: 8px; padding: 8px; text-align: center; }
+    .stat .val { font-size: 16px; font-weight: 700; color: #f1f5f9; }
+    .stat .lbl { font-size: 10px; color: #64748b; margin-top: 2px; }
+
+    /* API URL config */
+    .url-row { display: flex; gap: 6px; }
+    .url-input {
+      flex: 1; background: #1e293b; border: 1px solid #334155;
+      border-radius: 6px; padding: 7px 10px; color: #f1f5f9; font-size: 12px;
+      outline: none;
+    }
+    .url-input:focus { border-color: #3b82f6; }
+    .url-input::placeholder { color: #475569; }
+
+    .btn {
+      padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      border: none; cursor: pointer; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-success { background: #059669; color: white; }
+    .btn-ghost { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
+    .btn-sm { padding: 5px 10px; font-size: 11px; }
+
+    .url-hint { font-size: 10px; color: #475569; margin-top: 5px; }
+
+    /* Manual capture */
+    .manual-row { display: flex; gap: 6px; align-items: center; }
+    .manual-input {
+      width: 90px; background: #1e293b; border: 1px solid #334155;
+      border-radius: 6px; padding: 6px 8px; color: #f1f5f9; font-size: 13px;
+      outline: none; text-align: center;
+    }
+    .manual-input:focus { border-color: #3b82f6; }
+
+    /* History */
+    .history-list { list-style: none; }
+    .history-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 0; border-bottom: 1px solid #1e293b11;
+    }
+    .history-item:last-child { border-bottom: none; }
+
+    .mult-badge {
+      font-size: 13px; font-weight: 700; font-family: monospace;
+      min-width: 48px;
+    }
+    .mult-badge.win { color: #10b981; }
+    .mult-badge.loss { color: #ef4444; }
+
+    .sig-pill {
+      font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+    }
+    .sig-pill.enter { background: rgba(16,185,129,0.2); color: #10b981; }
+    .sig-pill.wait { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .sig-pill.error { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .sig-pill.none { background: #1e293b; color: #475569; }
+
+    .hist-time { font-size: 10px; color: #475569; }
+
+    .empty { text-align: center; color: #475569; padding: 12px 0; font-size: 12px; }
+
+    .alert {
+      padding: 7px 10px; border-radius: 6px; font-size: 11px; margin-top: 6px;
+    }
+    .alert-success { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.2); }
+    .alert-error { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+
+    .footer {
+      padding: 8px 14px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .footer-links { display: flex; gap: 6px; }
+
+    #alert-box { display: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">✈</div>
+    <div class="header-text">
+      <h1>Aviator Signal Bot</h1>
+      <p>Captura automática de rondas</p>
+    </div>
+    <div class="status-dot" id="status-dot"></div>
+  </div>
+
+  <!-- Señal actual -->
+  <div class="section">
+    <div class="section-title">Señal actual</div>
+    <div class="signal-card none" id="signal-card">
+      <div>
+        <div class="signal-label none" id="signal-label">—</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;" id="signal-streak"></div>
+      </div>
+      <div class="signal-meta">
+        <div class="signal-meta conf none" id="signal-conf">—</div>
+        <div class="signal-meta reason" id="signal-reason">Sin datos aún</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="section">
+    <div class="stats-row">
+      <div class="stat">
+        <div class="val" id="stat-total">0</div>
+        <div class="lbl">Rondas hoy</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="stat-ok">0</div>
+        <div class="lbl">Enviadas OK</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="stat-streak">—</div>
+        <div class="lbl">Racha bajas</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Historial reciente -->
+  <div class="section">
+    <div class="section-title">Últimas rondas capturadas</div>
+    <ul class="history-list" id="history-list">
+      <li class="empty">Sin capturas aún</li>
+    </ul>
+  </div>
+
+  <!-- Captura manual -->
+  <div class="section">
+    <div class="section-title">Captura manual (respaldo)</div>
+    <div class="manual-row">
+      <input type="number" class="manual-input" id="manual-mult"
+        placeholder="1.87" step="0.01" min="1" max="500" />
+      <button class="btn btn-success btn-sm" id="btn-manual">Enviar ronda</button>
+    </div>
+  </div>
+
+  <!-- Configuración API -->
+  <div class="section">
+    <div class="section-title">URL del dashboard</div>
+    <div class="url-row">
+      <input type="text" class="url-input" id="api-url"
+        placeholder="https://tuapp.replit.dev" />
+      <button class="btn btn-primary btn-sm" id="btn-save">Guardar</button>
+    </div>
+    <div class="url-hint">
+      Solo la URL base, ej: <code>https://miapp.replit.dev</code>
+    </div>
+    <div id="alert-box"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span style="font-size:10px;color:#334155;">v1.0.0</span>
+    <div class="footer-links">
+      <button class="btn btn-ghost btn-sm" id="btn-clear">Limpiar historial</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
