@@ -8,5 +8,8 @@ cmds = [
   ". /opt/venv/bin/activate && pip install -e ."
 ]
 
+[phases.build]
+cmds = ["echo 'Python service build complete'"]
+
 [start]
 cmd = ". /opt/venv/bin/activate && python main.py run --env-file .env"
