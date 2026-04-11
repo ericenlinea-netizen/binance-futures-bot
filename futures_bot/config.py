@@ -4,7 +4,11 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(_: str | None = None) -> bool:
+        return False
 
 
 def _get_bool(name: str, default: bool) -> bool:
