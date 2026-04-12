@@ -456,23 +456,23 @@ function atlasHybrid(rounds, index, calibrationData) {
   };
   const lastRound = rounds[index - 1]?.multiplier ?? 1;
   const prevRound = rounds[index - 2]?.multiplier ?? 1;
-  const immediateClean = lastRound < 2.6 && prevRound < 3.6;
-  const lowPressure = rangeRate(rounds, index, 4, 0, 1.5) >= 0.25;
+  const immediateClean = lastRound < 2.9 && prevRound < 4.1;
+  const lowPressure = rangeRate(rounds, index, 4, 0, 1.5) >= 0.2;
   const balancedAssist =
     proj.regime !== "SOBRECALENTADO" &&
     (proj.regime === "COMPRESION" || proj.regime === "RECUPERACION" || proj.regime === "NEUTRAL") &&
-    (snap.compression >= 0.38 || snap.microCompression >= 0.16 || snap.dry15 >= 2) &&
-    snap.shockRisk <= calibrationData.atlas.shockMax + 0.16 &&
-    snap.burstRisk <= calibrationData.atlas.burstMax + 0.2 &&
-    snap.shortHit15 <= Math.max(0.62, calibrationData.atlas.mediumHitMax + 0.1) &&
-    snap.vol6 <= calibrationData.atlas.vol6Max + 0.45 &&
-    proj.score >= 46 &&
-    proj.expected >= Math.max((calibrationData.base || 0), 0.42);
+    (snap.compression >= 0.34 || snap.microCompression >= 0.12 || snap.dry15 >= 1) &&
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.18 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.24 &&
+    snap.shortHit15 <= Math.max(0.66, calibrationData.atlas.mediumHitMax + 0.14) &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 0.55 &&
+    proj.score >= 44 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.01, 0.41);
   const scoutClean =
     scoutRow.decision === "ENTER" &&
     proj.regime !== "SOBRECALENTADO" &&
-    scoutRow.confidence >= 56 &&
-    proj.expected >= Math.max((calibrationData.base || 0), 0.43) &&
+    scoutRow.confidence >= 52 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.01, 0.42) &&
     immediateClean &&
     lowPressure;
   const balancedClean =

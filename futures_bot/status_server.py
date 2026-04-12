@@ -8,9 +8,10 @@ from futures_bot.portfolio_manager import PortfolioManager
 
 
 class StatusServer:
-    def __init__(self, account: AccountState, portfolio: PortfolioManager) -> None:
+    def __init__(self, account: AccountState, portfolio: PortfolioManager, diagnostics: dict[str, dict]) -> None:
         self.account = account
         self.portfolio = portfolio
+        self.diagnostics = diagnostics
         self.server: asyncio.base_events.Server | None = None
 
     def _snapshot(self) -> dict:
@@ -38,6 +39,7 @@ class StatusServer:
             "circuit_breaker_active": self.account.circuit_breaker_active,
             "trades_today": self.account.trades_today,
             "open_positions": positions,
+            "last_diagnostics": self.diagnostics,
         }
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

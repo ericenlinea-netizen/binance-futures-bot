@@ -26,11 +26,12 @@ class TradingBot:
         self.strategy = StrategyEngine(settings.min_signal_score)
         self.risk = RiskEngine(settings)
         self.portfolio = PortfolioManager(settings)
+        self.last_diagnostics: dict[str, dict] = {}
         self.account = AccountState(
             equity=settings.initial_equity,
             available_balance=settings.initial_equity,
         )
-        self.status_server = StatusServer(self.account, self.portfolio)
+        self.status_server = StatusServer(self.account, self.portfolio, self.last_diagnostics)
 
     async def _bootstrap_balance(self, client: BinanceFuturesClient) -> None:
         if not self.settings.is_live:
@@ -120,6 +121,9 @@ class TradingBot:
         closes = [c.close for c in snapshot.base_candles]
         if len(closes) >= 2:
             self.portfolio.register_return(symbol, (closes[-1] - closes[-2]) / closes[-2])
+        diag = self.strategy.diagnostics(snapshot)
+        if diag:
+            self.last_diagnostics[symbol] = diag
 
         existing = self.portfolio.positions.get(symbol)
         if existing and not existing.closed:
@@ -179,7 +183,11 @@ class TradingBot:
                             await self.monitor.daily_summary(self.account)
                             last_summary_day = current_day
                         if current_heartbeat_slot != last_heartbeat_slot:
-                            await self.monitor.heartbeat(self.account, len(self.portfolio.open_positions()))
+                            await self.monitor.heartbeat(
+                                self.account,
+                                len(self.portfolio.open_positions()),
+                                self.last_diagnostics,
+                            )
                             last_heartbeat_slot = current_heartbeat_slot
                         self.store.record_equity(self.account)
                         await asyncio.sleep(self.settings.poll_seconds)

@@ -82,7 +82,14 @@ class Monitor:
         self.logger.info(summary)
         await self.notifier.send(summary)
 
-    async def heartbeat(self, account: AccountState, open_positions: int) -> None:
+    async def heartbeat(self, account: AccountState, open_positions: int, diagnostics: dict[str, dict] | None = None) -> None:
+        details = ""
+        if diagnostics:
+            rows = []
+            for symbol, diag in diagnostics.items():
+                blockers = ",".join(diag.get("blockers", [])[:2]) or "none"
+                rows.append(f"{symbol}: score={diag.get('score', 0):.1f} blockers={blockers}")
+            details = "\n" + "\n".join(rows[:4])
         message = (
             "Bot heartbeat\n"
             f"Equity: {account.equity:.2f}\n"
@@ -91,6 +98,7 @@ class Monitor:
             f"Open positions: {open_positions}\n"
             f"Mode: {account.mode_profile.value}\n"
             f"Circuit breaker: {account.circuit_breaker_active}"
+            f"{details}"
         )
         self.logger.info(message)
         await self.notifier.send(message)
