@@ -55,6 +55,7 @@ class Settings:
     poll_seconds: float = 5.0
     initial_equity: float = 250.0
     service_port: int = 8000
+    heartbeat_minutes: int = 15
 
     @property
     def is_live(self) -> bool:
@@ -96,4 +97,5 @@ class Settings:
             poll_seconds=float(os.getenv("POLL_SECONDS", "5")),
             initial_equity=float(os.getenv("INITIAL_EQUITY", "250")),
             service_port=int(os.getenv("PORT", os.getenv("SERVICE_PORT", "8000"))),
+            heartbeat_minutes=int(os.getenv("HEARTBEAT_MINUTES", "15")),
         )

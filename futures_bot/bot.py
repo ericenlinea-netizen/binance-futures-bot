@@ -155,6 +155,7 @@ class TradingBot:
 
     async def run(self) -> None:
         last_summary_day = ""
+        last_heartbeat_slot = ""
         if self.settings.is_live and (not self.settings.api_key or not self.settings.api_secret):
             raise RuntimeError("Live mode requires BINANCE_API_KEY and BINANCE_API_SECRET")
         await self.status_server.start(self.settings.service_port)
@@ -164,6 +165,7 @@ class TradingBot:
                 data_engine = DataEngine(client, self.settings)
                 execution = ExecutionEngine(client, self.settings)
                 self.logger.info("Bot started in %s mode for %s", self.settings.mode, ",".join(self.settings.symbols))
+                await self.monitor.on_startup(self.settings.mode, self.settings.symbols, self.account)
 
                 while True:
                     try:
@@ -172,9 +174,13 @@ class TradingBot:
                         )
                         now = datetime.now(UTC)
                         current_day = now.date().isoformat()
+                        current_heartbeat_slot = f"{current_day}-{now.hour}-{now.minute // max(self.settings.heartbeat_minutes, 1)}"
                         if last_summary_day != current_day and now.hour == 23:
                             await self.monitor.daily_summary(self.account)
                             last_summary_day = current_day
+                        if current_heartbeat_slot != last_heartbeat_slot:
+                            await self.monitor.heartbeat(self.account, len(self.portfolio.open_positions()))
+                            last_heartbeat_slot = current_heartbeat_slot
                         self.store.record_equity(self.account)
                         await asyncio.sleep(self.settings.poll_seconds)
                     except Exception as exc:

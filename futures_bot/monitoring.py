@@ -49,6 +49,17 @@ class Monitor:
     async def on_signal(self, signal: TradeSignal) -> None:
         self.logger.info("Signal %s %s score=%.2f", signal.symbol, signal.side.value, signal.score)
 
+    async def on_startup(self, mode: str, symbols: list[str], account: AccountState) -> None:
+        message = (
+            "Bot started\n"
+            f"Mode: {mode}\n"
+            f"Symbols: {', '.join(symbols)}\n"
+            f"Equity: {account.equity:.2f}\n"
+            f"Available balance: {account.available_balance:.2f}"
+        )
+        self.logger.info(message)
+        await self.notifier.send(message)
+
     async def on_trade(self, title: str, body: str) -> None:
         self.logger.info("%s | %s", title, body)
         await self.notifier.send(f"{title}\n{body}")
@@ -70,3 +81,16 @@ class Monitor:
         )
         self.logger.info(summary)
         await self.notifier.send(summary)
+
+    async def heartbeat(self, account: AccountState, open_positions: int) -> None:
+        message = (
+            "Bot heartbeat\n"
+            f"Equity: {account.equity:.2f}\n"
+            f"Daily PnL: {account.daily_pnl:.2f}\n"
+            f"Trades today: {account.trades_today}\n"
+            f"Open positions: {open_positions}\n"
+            f"Mode: {account.mode_profile.value}\n"
+            f"Circuit breaker: {account.circuit_breaker_active}"
+        )
+        self.logger.info(message)
+        await self.notifier.send(message)
