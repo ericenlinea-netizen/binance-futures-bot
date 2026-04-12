@@ -39,9 +39,9 @@ class StrategyEngine:
         volume_boost = volumes[-1] / avg_volume if avg_volume else 0.0
 
         blockers: list[str] = []
-        if volatility_ratio < 0.003:
+        if volatility_ratio < 0.0018:
             blockers.append("low_volatility")
-        if ema_gap_ratio < 0.002 and abs(price_slope) < latest_atr * 0.05:
+        if ema_gap_ratio < 0.0015 and abs(price_slope) < latest_atr * 0.03:
             blockers.append("range_market")
 
         score = 0.0
@@ -53,6 +53,11 @@ class StrategyEngine:
         if confirm_up or confirm_down:
             score += 20
             reasons.append("multi_timeframe_confirmed")
+        elif (trend_up and confirm_closes[-1] > confirm_ema50[-1]) or (
+            trend_down and confirm_closes[-1] < confirm_ema50[-1]
+        ):
+            score += 10
+            reasons.append("partial_multi_timeframe_confirmed")
         if 48 <= latest_rsi <= 68 and trend_up:
             score += 15
             reasons.append("rsi_bullish")
@@ -64,10 +69,10 @@ class StrategyEngine:
         ):
             score += 20
             reasons.append("macd_momentum")
-        if volatility_ratio >= 0.0045:
+        if volatility_ratio >= 0.003:
             score += 10
             reasons.append("healthy_volatility")
-        if volume_boost > 1.1:
+        if volume_boost > 1.05:
             score += 10
             reasons.append("volume_confirmation")
 
@@ -75,6 +80,10 @@ class StrategyEngine:
         if trend_up and confirm_up and macd_line >= macd_signal:
             side = SignalSide.LONG
         elif trend_down and confirm_down and macd_line <= macd_signal:
+            side = SignalSide.SHORT
+        elif trend_up and confirm_closes[-1] > confirm_ema50[-1] and macd_hist >= -0.02:
+            side = SignalSide.LONG
+        elif trend_down and confirm_closes[-1] < confirm_ema50[-1] and macd_hist <= 0.02:
             side = SignalSide.SHORT
         if side is SignalSide.FLAT:
             blockers.append("no_side_alignment")
