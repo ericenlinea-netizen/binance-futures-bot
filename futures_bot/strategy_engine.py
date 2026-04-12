@@ -39,7 +39,7 @@ class StrategyEngine:
         volume_boost = volumes[-1] / avg_volume if avg_volume else 0.0
 
         blockers: list[str] = []
-        if volatility_ratio < 0.0018:
+        if volatility_ratio < 0.0012:
             blockers.append("low_volatility")
         if ema_gap_ratio < 0.0015 and abs(price_slope) < latest_atr * 0.03:
             blockers.append("range_market")
