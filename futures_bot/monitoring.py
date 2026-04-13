@@ -142,12 +142,16 @@ class Monitor:
         await self.notifier.send(summary)
 
     async def hourly_capital_summary(self, account: AccountState) -> None:
+        base_equity = max(account.equity - account.total_pnl, 1e-9)
+        daily_pct = (account.daily_pnl / base_equity) * 100
+        total_pct = (account.total_pnl / base_equity) * 100
         summary = (
             "RESUMEN CAPITAL\n"
+            f"Capital base: ${base_equity:.2f}\n"
             f"Capital actual: ${account.equity:.2f}\n"
             f"Disponible: ${account.available_balance:.2f}\n"
-            f"Ganancia/perdida del dia: ${account.daily_pnl:.2f}\n"
-            f"Resultado acumulado: ${account.total_pnl:.2f}\n"
+            f"Hoy: ${account.daily_pnl:.2f} ({daily_pct:+.2f}%)\n"
+            f"Acumulado: ${account.total_pnl:.2f} ({total_pct:+.2f}%)\n"
             f"Operaciones hoy: {account.trades_today}\n"
             f"Modo: {account.mode_profile.value}"
         )
