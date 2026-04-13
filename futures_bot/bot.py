@@ -206,7 +206,7 @@ class TradingBot:
                         await asyncio.gather(
                             *(self._scan_symbol(symbol, data_engine, execution) for symbol in self.settings.symbols)
                         )
-                        now = datetime.now(UTC)
+                        now = datetime.now(self.settings.tzinfo)
                         current_day = now.date().isoformat()
                         current_heartbeat_slot = f"{current_day}-{now.hour}-{now.minute // max(self.settings.heartbeat_minutes, 1)}"
                         if last_summary_day != current_day and now.hour == 23:

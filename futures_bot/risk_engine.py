@@ -11,7 +11,7 @@ class RiskEngine:
         self.settings = settings
 
     def reset_daily_if_needed(self, account: AccountState) -> None:
-        today = datetime.now(UTC).date().isoformat()
+        today = datetime.now(self.settings.tzinfo).date().isoformat()
         if account.last_trade_day != today:
             account.daily_pnl = 0.0
             account.trades_today = 0

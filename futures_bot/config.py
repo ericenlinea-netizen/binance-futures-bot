@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 try:
     from dotenv import load_dotenv
@@ -57,6 +58,7 @@ class Settings:
     service_port: int = 8000
     heartbeat_minutes: int = 15
     margin_buffer_ratio: float = 0.05
+    local_timezone: str = "America/Bogota"
 
     @property
     def is_live(self) -> bool:
@@ -65,6 +67,10 @@ class Settings:
     @property
     def db_path(self) -> Path:
         return Path(self.sqlite_path).resolve()
+
+    @property
+    def tzinfo(self) -> ZoneInfo:
+        return ZoneInfo(self.local_timezone)
 
     @classmethod
     def load(cls, env_file: str = ".env") -> "Settings":
@@ -100,4 +106,5 @@ class Settings:
             service_port=int(os.getenv("PORT", os.getenv("SERVICE_PORT", "8000"))),
             heartbeat_minutes=int(os.getenv("HEARTBEAT_MINUTES", "15")),
             margin_buffer_ratio=float(os.getenv("MARGIN_BUFFER_RATIO", "0.05")),
+            local_timezone=os.getenv("LOCAL_TIMEZONE", "America/Bogota"),
         )
