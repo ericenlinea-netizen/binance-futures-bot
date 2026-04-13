@@ -1,4 +1,4 @@
-function sendMessage(message) {
+﻿function sendMessage(message) {
   return new Promise((resolve) => chrome.runtime.sendMessage(message, (response) => resolve(response)));
 }
 
@@ -56,6 +56,14 @@ const percentile = (values, ratio, fallback = 0) => {
   const sorted = [...values].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * ratio)));
   return sorted[index];
+};
+
+const HYBRID_EXECUTION = {
+  mode: "gale_v1",
+  minGapMs: 40000,
+  directWinPnl: 0.5,
+  galeWinPnl: 0,
+  fullLossPnl: -3,
 };
 
 function lossStreak(rounds, index, target = 1.5) {
@@ -456,44 +464,72 @@ function atlasHybrid(rounds, index, calibrationData) {
   };
   const lastRound = rounds[index - 1]?.multiplier ?? 1;
   const prevRound = rounds[index - 2]?.multiplier ?? 1;
-  const immediateClean = lastRound < 2.9 && prevRound < 4.1;
-  const lowPressure = rangeRate(rounds, index, 4, 0, 1.5) >= 0.2;
+  const immediateClean = lastRound < 3.9 && prevRound < 5.4;
+  const lowPressure = rangeRate(rounds, index, 4, 0, 1.5) >= 0.1;
+  const droughtAssist =
+    snap.dry15 >= 1 || snap.microCompression >= 0.1 || snap.compression >= 0.18;
+  const softDroughtAssist =
+    snap.dry15 >= 1 || snap.microCompression >= 0.03 || snap.compression >= 0.1;
+  const flowAssist =
+    proj.regime !== "SOBRECALENTADO" &&
+    (proj.regime === "NEUTRAL" || proj.regime === "RECUPERACION" || proj.regime === "COMPRESION") &&
+    softDroughtAssist &&
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.36 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.5 &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 1.1 &&
+    proj.score >= 26 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.1, 0.33);
+  const continuityAssist =
+    proj.regime !== "SOBRECALENTADO" &&
+    (proj.regime === "NEUTRAL" || proj.regime === "RECUPERACION" || proj.regime === "COMPRESION") &&
+    (softDroughtAssist || lowPressure) &&
+    lastRound < 6.2 &&
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.58 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.7 &&
+    snap.shortHit15 <= Math.max(0.88, calibrationData.atlas.mediumHitMax + 0.38) &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 1.5 &&
+    proj.score >= 17 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.16, 0.27);
   const balancedAssist =
     proj.regime !== "SOBRECALENTADO" &&
     (proj.regime === "COMPRESION" || proj.regime === "RECUPERACION" || proj.regime === "NEUTRAL") &&
-    (snap.compression >= 0.3 || snap.microCompression >= 0.1 || snap.dry15 >= 1) &&
-    snap.shockRisk <= calibrationData.atlas.shockMax + 0.2 &&
-    snap.burstRisk <= calibrationData.atlas.burstMax + 0.28 &&
-    snap.shortHit15 <= Math.max(0.7, calibrationData.atlas.mediumHitMax + 0.18) &&
-    snap.vol6 <= calibrationData.atlas.vol6Max + 0.65 &&
-    proj.score >= 42 &&
-    proj.expected >= Math.max((calibrationData.base || 0) - 0.02, 0.4);
+    (snap.compression >= 0.08 || snap.microCompression >= 0.02 || droughtAssist) &&
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.4 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.5 &&
+    snap.shortHit15 <= Math.max(0.82, calibrationData.atlas.mediumHitMax + 0.3) &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 1.1 &&
+    proj.score >= 21 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.12, 0.3);
   const scoutClean =
     scoutRow.decision === "ENTER" &&
     proj.regime !== "SOBRECALENTADO" &&
-    scoutRow.confidence >= 48 &&
-    proj.expected >= Math.max((calibrationData.base || 0) - 0.02, 0.41) &&
-    immediateClean &&
-    lowPressure;
+    scoutRow.confidence >= 30 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.12, 0.31) &&
+    (immediateClean || droughtAssist) &&
+    (lowPressure || droughtAssist);
   const balancedClean =
-    (balancedRow.decision === "ENTER" && balancedRow.confidence >= 50) || balancedAssist;
+    (balancedRow.decision === "ENTER" && balancedRow.confidence >= 34) || balancedAssist;
+  const flowClean = flowAssist && (balancedRow.confidence >= 26 || scoutRow.confidence >= 26);
+  const continuityClean =
+    continuityAssist &&
+    (Math.max(balancedRow.confidence, scoutRow.confidence) >= 26 || droughtAssist);
 
   if (balancedClean && scoutClean) {
     return {
       decision: "ENTER",
       source: "DUAL",
-      tier: proj.expected >= 0.47 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 62 ? "A" : "B",
-      confidence: clamp(Math.max(balancedRow.confidence, scoutRow.confidence, 58) + 6, 0, 100),
+      tier: proj.expected >= 0.41 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 50 ? "A" : "B",
+      confidence: clamp(Math.max(balancedRow.confidence, scoutRow.confidence, 54) + 6, 0, 100),
       projection: proj,
     };
   }
   if (balancedClean) {
-    const tier = balancedRow.decision === "ENTER" && proj.expected >= 0.46 && Math.max(balancedRow.confidence, 54) >= 60 ? "A" : "B";
+    const tier = balancedRow.decision === "ENTER" && proj.expected >= 0.39 && Math.max(balancedRow.confidence, 44) >= 48 ? "A" : "B";
     return {
       decision: "ENTER",
       source: balancedRow.decision === "ENTER" ? "BALANCED" : "BALANCED-ASSIST",
       tier,
-      confidence: Math.max(balancedRow.confidence, 52),
+      confidence: Math.max(balancedRow.confidence, 40),
       projection: proj,
     };
   }
@@ -501,8 +537,26 @@ function atlasHybrid(rounds, index, calibrationData) {
     return {
       decision: "ENTER",
       source: "SCOUT-LIMPIO",
-      tier: proj.expected >= 0.43 && scoutRow.confidence >= 54 ? "B" : "C",
+      tier: proj.expected >= 0.34 && scoutRow.confidence >= 38 ? "B" : "C",
       confidence: scoutRow.confidence,
+      projection: proj,
+    };
+  }
+  if (flowClean) {
+    return {
+      decision: "ENTER",
+      source: "FLOW-ASSIST",
+      tier: proj.expected >= 0.31 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 34 ? "B" : "C",
+      confidence: Math.max(balancedRow.confidence, scoutRow.confidence, 32),
+      projection: proj,
+    };
+  }
+  if (continuityClean) {
+    return {
+      decision: "ENTER",
+      source: "CONTINUITY-ASSIST",
+      tier: proj.expected >= 0.29 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 32 ? "B" : "C",
+      confidence: Math.max(balancedRow.confidence, scoutRow.confidence, 30),
       projection: proj,
     };
   }
@@ -730,35 +784,122 @@ function equityStats(entries) {
   };
 }
 
+function outcomeCounts(entries) {
+  const wins = entries.filter((entry) => entry.outcome === "WIN").length;
+  const gales = entries.filter((entry) => entry.outcome === "GALE").length;
+  const losses = entries.filter((entry) => entry.outcome === "LOSS").length;
+  const total = entries.length;
+  return {
+    total,
+    wins,
+    gales,
+    losses,
+    successRate: total ? (wins + gales) / total : 0,
+    directWinRate: total ? wins / total : 0,
+  };
+}
+
+function resolveHybridOperations(rawEntries, rounds = []) {
+  const orderedEntries = rawEntries
+    .slice()
+    .sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+  const orderedRounds = rounds
+    .slice()
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+
+  const findGaleRound = (minTime) =>
+    orderedRounds.find((round) => {
+      const roundMs = new Date(round.createdAt || 0).getTime();
+      return Number.isFinite(roundMs) && roundMs >= minTime;
+    });
+
+  const operations = [];
+  let nextAllowedMs = -Infinity;
+  let pendingGale = null;
+
+  for (const entry of orderedEntries) {
+    const entryMs = new Date(entry.time || 0).getTime();
+    if (!Number.isFinite(entryMs)) continue;
+    if (entryMs < nextAllowedMs) continue;
+
+      if (entry.win) {
+        operations.push({
+          ...entry,
+          resolvedAt: entry.time,
+          timeDisplay: fmtDateTime(entry.time),
+          actualDisplay: `${entry.actual.toFixed(2)}x`,
+          attempts: 1,
+          outcome: "WIN",
+          win: true,
+          pnl: HYBRID_EXECUTION.directWinPnl,
+      });
+      nextAllowedMs = entryMs + HYBRID_EXECUTION.minGapMs;
+      continue;
+    }
+
+    const galeAtMs = entryMs + HYBRID_EXECUTION.minGapMs;
+    const galeRound = findGaleRound(galeAtMs);
+    if (!galeRound) {
+      pendingGale = {
+        ...entry,
+        waitingGale: true,
+        galeAt: new Date(galeAtMs).toISOString(),
+        elapsedMs: Math.max(0, Date.now() - entryMs),
+      };
+      break;
+    }
+
+    const galeSucceeded = galeRound.multiplier >= 1.5;
+    const galeResolvedMs = new Date(galeRound.createdAt || 0).getTime();
+    operations.push({
+      ...entry,
+      resolvedAt: galeRound.createdAt,
+      timeDisplay: `${fmtDateTime(entry.time)} -> ${fmtDateTime(galeRound.createdAt)}`,
+      actual: galeRound.multiplier,
+      actualDisplay: `${entry.actual.toFixed(2)}x -> ${galeRound.multiplier.toFixed(2)}x`,
+      attempts: 2,
+      galeActual: galeRound.multiplier,
+      galeTime: galeRound.createdAt,
+      sourceMode: `${entry.sourceMode} + GALE`,
+      outcome: galeSucceeded ? "GALE" : "LOSS",
+      win: galeSucceeded,
+      pnl: galeSucceeded ? HYBRID_EXECUTION.galeWinPnl : HYBRID_EXECUTION.fullLossPnl,
+    });
+    nextAllowedMs = galeResolvedMs + HYBRID_EXECUTION.minGapMs;
+  }
+
+  return { operations, pendingGale };
+}
+
 function buildReport(data) {
   const strengths = [];
   const cautions = [];
 
   if (data.rob.stability >= 0.6) strengths.push("Atlas mantiene buena estabilidad por bloques.");
-  if (data.wf.summary.stability >= 0.5) strengths.push("La validación walk-forward muestra consistencia fuera de muestra.");
+  if (data.wf.summary.stability >= 0.5) strengths.push("La validacion walk-forward muestra consistencia fuera de muestra.");
   if (data.entryStats.winRate >= Math.max(data.rob.baseline + 0.05, 0.5)) strengths.push("Las entradas filtradas superan claramente el baseline general.");
-  if (data.hybridSources?.balanced > 0) strengths.push("HYBRID está aprovechando la limpieza de Balanced como base principal.");
-  if (data.hybridSources?.scout > 0 || data.hybridSources?.dual > 0) strengths.push("HYBRID también está sumando frecuencia útil desde Scout limpio.");
-  if (data.rob.topLift >= 0.03) strengths.push("La banda premium conserva lift positivo frente al histórico total.");
+  if (data.hybridSources?.balanced > 0) strengths.push("HYBRID esta aprovechando la limpieza de Balanced como base principal.");
+  if (data.hybridSources?.scout > 0 || data.hybridSources?.dual > 0) strengths.push("HYBRID tambien esta sumando frecuencia util desde Scout limpio.");
+  if (data.rob.topLift >= 0.03) strengths.push("La banda premium conserva lift positivo frente al historico total.");
   if (data.equity.maxDrawdown <= 4) strengths.push("La curva de equity sigue contenida en drawdown.");
 
-  if (data.rounds.length < 220) cautions.push("La muestra todavía es corta para una lectura premium totalmente confiable.");
-  if (data.wf.summary.stability < 0.5) cautions.push("El walk-forward todavía no demuestra consistencia suficiente.");
-  if (data.rob.rule.draw > 4.5) cautions.push("La presión del drawdown sigue siendo elevada.");
-  if (data.hybrid?.projection?.regime === "SOBRECALENTADO" || data.proj.regime === "SOBRECALENTADO") cautions.push("El régimen actual viene sobrecalentado y HYBRID prefiere esperar.");
-  if (data.entryStats.total < 20) cautions.push("Aún hay pocas entradas aprobadas para juzgar el modelo con comodidad.");
+  if (data.rounds.length < 220) cautions.push("La muestra todavia es corta para una lectura premium totalmente confiable.");
+  if (data.wf.summary.stability < 0.5) cautions.push("El walk-forward todavia no demuestra consistencia suficiente.");
+  if (data.rob.rule.draw > 4.5) cautions.push("La presion del drawdown sigue siendo elevada.");
+  if (data.hybrid?.projection?.regime === "SOBRECALENTADO" || data.proj.regime === "SOBRECALENTADO") cautions.push("El regimen actual viene sobrecalentado y HYBRID prefiere esperar.");
+  if (data.entryStats.total < 20) cautions.push("Aun hay pocas entradas aprobadas para juzgar el modelo con comodidad.");
 
   const verdict =
     data.prem.mode === "OPERABLE" && data.consensus.pass
-      ? "Atlas está alineado para operar de forma experimental."
+      ? "Atlas esta alineado para operar de forma experimental."
       : data.prem.mode === "OBSERVACION"
-        ? "Atlas está en observación: hay estructura, pero aún no hay alineación total."
-        : "Atlas permanece bloqueado hasta que el contexto y la validación converjan mejor.";
+        ? "Atlas esta en observacion: hay estructura, pero aun no hay alineacion total."
+        : "Atlas permanece bloqueado hasta que el contexto y la validacion converjan mejor.";
 
   return {
     verdict,
-    strengths: strengths.length ? strengths : ["Atlas todavía no acumula suficientes fortalezas contundentes."],
-    cautions: cautions.length ? cautions : ["No se observan alertas críticas inmediatas."],
+    strengths: strengths.length ? strengths : ["Atlas todavia no acumula suficientes fortalezas contundentes."],
+    cautions: cautions.length ? cautions : ["No se observan alertas criticas inmediatas."],
   };
 }
 
@@ -956,10 +1097,10 @@ function build(roundsRaw) {
     evalRule(rounds, "Motor Atlas 1.5x", "Modelo propio por regimenes, compresion, consenso y enfriamiento.", (data, index) => {
       return atlasStrategy(data, index, calibrationData).decision === "ENTER" && atlasConsensus(data, index, calibrationData).pass;
     }),
-    evalRule(rounds, "Atlas Balanced", "Versión más operativa con filtros más flexibles y mayor frecuencia.", (data, index) => {
+    evalRule(rounds, "Atlas Balanced", "VersiÃ³n mÃ¡s operativa con filtros mÃ¡s flexibles y mayor frecuencia.", (data, index) => {
       return atlasBalanced(data, index, calibrationData).decision === "ENTER";
     }),
-    evalRule(rounds, "Atlas Scout", "Modo exploratorio para generar más entradas medibles sin perseguir picos extremos.", (data, index) => {
+    evalRule(rounds, "Atlas Scout", "Modo exploratorio para generar mÃ¡s entradas medibles sin perseguir picos extremos.", (data, index) => {
       return atlasScout(data, index, calibrationData).decision === "ENTER";
     }),
   ].sort((a, b) => b.roi - a.roi);
@@ -989,10 +1130,12 @@ function entryRows(entries) {
     .slice(0, 50)
     .map(
       (entry) =>
-        `<tr><td>${fmtDateTime(entry.time)}</td><td>${entry.tier || "-"}</td><td>${entry.sourceMode || "-"}</td><td>${entry.regime}</td><td class="mono">${entry.score.toFixed(0)}</td><td class="mono">${entry.confidence.toFixed(0)}%</td><td class="mono">${entry.consensus ? entry.consensus.toFixed(0) : 0}%</td><td class="mono">${fmtPct(
+        `<tr><td>${entry.timeDisplay || fmtDateTime(entry.time)}</td><td>${entry.tier || "-"}</td><td>${entry.sourceMode || "-"}</td><td>${entry.regime}</td><td class="mono">${entry.score.toFixed(0)}</td><td class="mono">${entry.confidence.toFixed(0)}%</td><td class="mono">${entry.consensus ? entry.consensus.toFixed(0) : 0}%</td><td class="mono">${fmtPct(
           entry.expected
-        )}</td><td class="mono ${entry.win ? "hit" : "miss"}">${entry.actual.toFixed(2)}x</td><td class="${entry.win ? "hit" : "miss"}">${entry.win ? "WIN" : "LOSS"}</td><td class="mono ${
-          entry.pnl >= 0 ? "good" : "bad"
+        )}</td><td class="mono ${entry.outcome === "LOSS" ? "miss" : entry.outcome === "GALE" || entry.outcome === "PENDING" ? "warn" : "hit"}">${entry.actualDisplay || `${entry.actual.toFixed(2)}x`}</td><td class="${
+          entry.outcome === "LOSS" ? "miss" : entry.outcome === "GALE" || entry.outcome === "PENDING" ? "warn" : "hit"
+        }">${entry.outcome || (entry.win ? "WIN" : "LOSS")}</td><td class="mono ${
+          entry.pnl > 0 ? "good" : entry.pnl < 0 ? "bad" : "warn"
         }">${fmtUnits(entry.pnl)}</td></tr>`
     );
 }
@@ -1002,14 +1145,15 @@ function visibleEntryStats(entries) {
     .slice()
     .sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0))
     .slice(0, 50);
-  const wins = sample.filter((entry) => entry.win).length;
-  const losses = sample.length - wins;
+  const counts = outcomeCounts(sample);
   const net = sample.reduce((sum, entry) => sum + entry.pnl, 0);
   return {
-    total: sample.length,
-    wins,
-    losses,
-    winRate: sample.length ? wins / sample.length : 0,
+    total: counts.total,
+    wins: counts.wins,
+    gales: counts.gales,
+    losses: counts.losses,
+    winRate: counts.directWinRate,
+    successRate: counts.successRate,
     net,
   };
 }
@@ -1023,16 +1167,17 @@ function cycleStats(entries, modeLabel) {
   for (let start = 0; start < ordered.length; start += 50) {
     const chunk = ordered.slice(start, start + 50);
     if (!chunk.length) continue;
-    const wins = chunk.filter((entry) => entry.win).length;
-    const losses = chunk.length - wins;
+    const counts = outcomeCounts(chunk);
     const net = chunk.reduce((sum, entry) => sum + entry.pnl, 0);
     cycles.push({
       mode: modeLabel,
       cycle: Math.floor(start / 50) + 1,
       records: chunk.length,
-      wins,
-      losses,
-      winRate: chunk.length ? wins / chunk.length : 0,
+      wins: counts.wins,
+      gales: counts.gales,
+      losses: counts.losses,
+      winRate: counts.directWinRate,
+      successRate: counts.successRate,
       net,
       oldest: chunk[0]?.time ?? null,
       newest: chunk[chunk.length - 1]?.time ?? null,
@@ -1054,14 +1199,16 @@ function dailyStats(entries, modeLabel) {
       day: dayLabel(entry.time),
       total: 0,
       wins: 0,
+      gales: 0,
       losses: 0,
       net: 0,
       newest: null,
       oldest: null,
     };
     current.total += 1;
-    current.wins += entry.win ? 1 : 0;
-    current.losses += entry.win ? 0 : 1;
+    current.wins += entry.outcome === "WIN" ? 1 : 0;
+    current.gales += entry.outcome === "GALE" ? 1 : 0;
+    current.losses += entry.outcome === "LOSS" ? 1 : 0;
     current.net += entry.pnl;
     current.newest = !current.newest || new Date(entry.time) > new Date(current.newest) ? entry.time : current.newest;
     current.oldest = !current.oldest || new Date(entry.time) < new Date(current.oldest) ? entry.time : current.oldest;
@@ -1072,6 +1219,7 @@ function dailyStats(entries, modeLabel) {
     .map((row) => ({
       ...row,
       winRate: row.total ? row.wins / row.total : 0,
+      successRate: row.total ? (row.wins + row.gales) / row.total : 0,
     }))
     .sort((a, b) => new Date(b.newest || 0) - new Date(a.newest || 0));
 }
@@ -1099,18 +1247,18 @@ function profitCycles(entries, targetNet = 5) {
     net += entry.pnl;
 
     if (net >= targetNet) {
-      const wins = buffer.filter((item) => item.win).length;
-      const losses = buffer.length - wins;
+      const counts = outcomeCounts(buffer);
       const startedAt = buffer[0]?.time ?? null;
-      const completedAt = buffer[buffer.length - 1]?.time ?? null;
+      const completedAt = buffer[buffer.length - 1]?.resolvedAt ?? buffer[buffer.length - 1]?.time ?? null;
       completed.push({
         cycle: completed.length + 1,
         startedAt,
         completedAt,
         durationMs: startedAt && completedAt ? new Date(completedAt).getTime() - new Date(startedAt).getTime() : 0,
         entries: buffer.length,
-        wins,
-        losses,
+        wins: counts.wins,
+        gales: counts.gales,
+        losses: counts.losses,
         net,
         avgPerEntry: buffer.length ? net / buffer.length : 0,
       });
@@ -1140,10 +1288,14 @@ function currentProfitCycleState(entries, targetNet = 5) {
   }
 
   const startedAt = buffer[0]?.time ?? null;
-  const lastAt = buffer[buffer.length - 1]?.time ?? null;
+  const lastAt = buffer[buffer.length - 1]?.resolvedAt ?? buffer[buffer.length - 1]?.time ?? null;
+  const counts = outcomeCounts(buffer);
   return {
     net,
     entries: buffer.length,
+    wins: counts.wins,
+    gales: counts.gales,
+    losses: counts.losses,
     startedAt,
     lastAt,
     durationMs: startedAt && lastAt ? new Date(lastAt).getTime() - new Date(startedAt).getTime() : 0,
@@ -1209,55 +1361,67 @@ function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
   const cycle = currentProfitCycleState(existingEntries, 5);
   const idleMinutes = minutesSinceLastEntry(existingEntries, candidate.time);
   const matureSample = totalRounds >= 5000;
+  const longDrought = idleMinutes >= (matureSample ? 2 : 4);
+  const forcedFlow = idleMinutes >= (matureSample ? 4 : 7);
   const cycleSlow =
-    cycle.entries >= 6 &&
+    cycle.entries >= 4 &&
     cycle.net < 2 &&
-    cycle.durationMs >= 12 * 60000;
+    cycle.durationMs >= 8 * 60000;
   const cycleVerySlow =
-    cycle.entries >= 9 &&
+    cycle.entries >= 6 &&
     cycle.net < 1.5 &&
-    cycle.durationMs >= 18 * 60000;
+    cycle.durationMs >= 12 * 60000;
   const cycleStalled =
-    cycle.entries >= 12 &&
+    cycle.entries >= 8 &&
     cycle.net < 1 &&
-    cycle.durationMs >= 24 * 60000;
-  const bucketPositive = bucket.total < 8 || bucket.roi >= (matureSample ? -0.12 : -0.08) || bucket.winRate >= (matureSample ? 0.43 : 0.45);
+    cycle.durationMs >= 16 * 60000;
+  const bucketPositive = bucket.total < 8 || bucket.roi >= (matureSample ? -0.3 : -0.2) || bucket.winRate >= (matureSample ? 0.33 : 0.38);
   const bucketStrong = bucket.total < 8 || bucket.roi >= (matureSample ? -0.04 : -0.01) || bucket.winRate >= (matureSample ? 0.49 : 0.51);
-  const sourceStable = source.total < 8 || source.roi >= (matureSample ? -0.1 : -0.06) || source.winRate >= (matureSample ? 0.44 : 0.46);
+  const sourceStable = source.total < 8 || source.roi >= (matureSample ? -0.28 : -0.18) || source.winRate >= (matureSample ? 0.34 : 0.39);
   const sourceStrong = source.total < 8 || source.roi >= (matureSample ? -0.02 : 0) || source.winRate >= (matureSample ? 0.5 : 0.52);
   const tierStrong = tierPerf.total < 10 || tierPerf.roi >= (matureSample ? -0.03 : 0) || tierPerf.winRate >= (matureSample ? 0.5 : 0.52);
   const isAssist = candidate.sourceMode === "BALANCED-ASSIST";
+  const isFlowAssist = candidate.sourceMode === "FLOW-ASSIST" || candidate.sourceMode === "CONTINUITY-ASSIST";
 
   if (candidate.tier === "A") {
     return (
       sourceStrong &&
       tierStrong &&
-      candidate.expected >= 0.45 &&
-      candidate.confidence >= 58 &&
-      (recent.total < 6 || recent.roi >= -0.12 || recent.winRate >= 0.44 || cycleSlow)
+      candidate.expected >= 0.43 &&
+      candidate.confidence >= 54 &&
+      (recent.total < 6 || recent.roi >= -0.14 || recent.winRate >= 0.42 || cycleSlow || longDrought)
     );
   }
 
   if (candidate.tier === "B") {
     return (
       bucketPositive &&
+      (sourceStable || isFlowAssist || forcedFlow) &&
       (
         recent.total < 6 ||
-        recent.roi >= (matureSample ? -0.22 : -0.18) ||
-        recent.winRate >= (matureSample ? 0.39 : 0.41) ||
-        idleMinutes >= (matureSample ? 4 : 6) ||
+        recent.roi >= (matureSample ? -0.46 : -0.34) ||
+        recent.winRate >= (matureSample ? 0.28 : 0.33) ||
+        idleMinutes >= (matureSample ? 0.5 : 1) ||
         cycleSlow ||
-        cycleStalled
+        cycleStalled ||
+        (longDrought && candidate.expected >= 0.3 && candidate.confidence >= 36) ||
+        (forcedFlow && candidate.expected >= 0.27 && candidate.confidence >= 34)
       )
     );
   }
 
   return (
     candidate.tier === "C" &&
-    bucketStrong &&
-    !isAssist &&
-    (idleMinutes >= (matureSample ? 6 : 8) || cycleVerySlow || cycleStalled) &&
-    (recent.total < 6 || (recent.winRate >= (matureSample ? 0.42 : 0.45) && recent.roi >= (matureSample ? -0.12 : -0.08)))
+    bucketPositive &&
+    (!isAssist || longDrought || forcedFlow) &&
+    (idleMinutes >= (matureSample ? 0.75 : 1.5) || cycleVerySlow || cycleStalled || longDrought || forcedFlow) &&
+    (sourceStable || isFlowAssist || longDrought || forcedFlow) &&
+    (
+      recent.total < 6 ||
+      (recent.winRate >= (matureSample ? 0.25 : 0.3) && recent.roi >= (matureSample ? -0.42 : -0.28)) ||
+      longDrought ||
+      forcedFlow
+    )
   );
 }
 
@@ -1296,11 +1460,16 @@ async function freezeHybridEntries(dynamicEntries) {
 }
 
 function rebuildHybridFromFrozen(data, frozenEntries) {
-  const entries = frozenEntries.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+  const resolved = resolveHybridOperations(frozenEntries, data.rounds);
+  const entries = resolved.operations.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+  const counts = outcomeCounts(entries);
   const entryStats = {
-    total: entries.length,
-    wins: entries.filter((entry) => entry.win).length,
-    winRate: entries.length ? entries.filter((entry) => entry.win).length / entries.length : 0,
+    total: counts.total,
+    wins: counts.wins,
+    gales: counts.gales,
+    losses: counts.losses,
+    winRate: counts.directWinRate,
+    successRate: counts.successRate,
     roi: entries.length ? entries.reduce((sum, entry) => sum + entry.pnl, 0) / entries.length : 0,
   };
   const cadence = { ...data.cadence, hybrid: hourlyStats(entries) };
@@ -1320,6 +1489,8 @@ function rebuildHybridFromFrozen(data, frozenEntries) {
   return {
     ...data,
     entries,
+    rawHybridEntries: frozenEntries.slice(),
+    pendingGale: resolved.pendingGale,
     entryStats,
     cadence,
     cycles,
@@ -1492,14 +1663,14 @@ function buildLiveSignal(data) {
       action: "PREPARAR",
       mode: "HYBRID",
       confidence: data.hybrid.confidence,
-      note: `Hybrid está cerca. Nivel ${data.hybrid.tier}, fuente ${data.hybrid.source}, expected ${fmtPct(data.hybrid.projection.expected)} y confianza ${data.hybrid.confidence.toFixed(0)}%.`,
+      note: `Hybrid estÃ¡ cerca. Nivel ${data.hybrid.tier}, fuente ${data.hybrid.source}, expected ${fmtPct(data.hybrid.projection.expected)} y confianza ${data.hybrid.confidence.toFixed(0)}%.`,
     };
   }
   return {
     action: "ESPERAR",
     mode: "NINGUNO",
     confidence: data.hybrid.confidence,
-    note: "Hybrid sigue esperando. El sistema solo activa entrada cuando el contexto mezcla frecuencia útil con limpieza suficiente.",
+    note: "Hybrid sigue esperando. El sistema solo activa entrada cuando el contexto mezcla frecuencia util con limpieza suficiente.",
   };
 }
 
@@ -1522,10 +1693,10 @@ function render(data, stats) {
     : "Esperando primeras rondas";
   document.getElementById("entry-total").textContent = String(data.entryStats.total);
   document.getElementById("entry-wins").textContent = String(data.entryStats.wins);
-  document.getElementById("entry-win-rate").textContent = fmtPct(data.entryStats.winRate);
+  document.getElementById("entry-win-rate").textContent = String(data.entryStats.gales ?? 0);
   document.getElementById("entry-roi").textContent = fmtUnits(data.entryStats.roi);
   document.getElementById("strict-total").textContent = String(data.entryStats.total);
-  document.getElementById("strict-note").textContent = `${fmtPct(data.entryStats.winRate)} · ROI ${fmtUnits(data.entryStats.roi)} · ${data.hybrid.source}`;
+  document.getElementById("strict-note").textContent = `${fmtPct(data.entryStats.successRate ?? 0)} sin perdida · ROI ${fmtUnits(data.entryStats.roi)} · ${data.hybrid.source}`;
   document.getElementById("balanced-total").textContent = String(data.balancedStats.total);
   document.getElementById("balanced-note").textContent = `${fmtPct(data.balancedStats.winRate)} · ROI ${fmtUnits(data.balancedStats.roi)}`;
   document.getElementById("scout-total").textContent = String(data.scoutStats.total);
@@ -1541,25 +1712,25 @@ function render(data, stats) {
   document.getElementById("best-mode").textContent = sourceBreakdown[0]?.[1] ? sourceBreakdown[0][0] : "-";
   document.getElementById("best-mode-note").textContent = sourceBreakdown[0]?.[1]
     ? `${sourceBreakdown[0][1]} entradas HYBRID`
-    : "Esperando señales";
+    : "Esperando senales";
   const hybridState = data.hybrid.decision === "ENTER" ? "ACTIVO" : data.signal.action === "PREPARAR" ? "CERCA" : "ESPERA";
   const balancedState = data.balanced.decision === "ENTER" ? "ACTIVO" : "ESPERA";
   const scoutState = data.scout.decision === "ENTER" ? "ACTIVO" : "ESPERA";
   const relationshipSummary =
     hybridState === "ACTIVO"
-      ? `HYBRID ya está habilitado y su fuente principal ahora mismo es ${data.hybrid.source}.`
+      ? `HYBRID ya esta habilitado y su fuente principal ahora mismo es ${data.hybrid.source}.`
       : balancedState === "ACTIVO" && scoutState === "ACTIVO"
-        ? "Balanced y Scout limpio están alineados, pero HYBRID todavía espera una confirmación final."
+        ? "Balanced y Scout limpio estÃ¡n alineados, pero HYBRID todavÃ­a espera una confirmaciÃ³n final."
         : balancedState === "ACTIVO"
-          ? "Balanced aporta limpieza, pero HYBRID aún no toma la entrada sin apoyo suficiente del contexto."
+          ? "Balanced aporta limpieza, pero HYBRID aun no toma la entrada sin apoyo suficiente del contexto."
           : scoutState === "ACTIVO"
-            ? "Scout ve movimiento, pero HYBRID todavía no lo considera lo bastante limpio para convertirlo en entrada."
-            : "Ninguna fuente está suficientemente alineada; HYBRID sigue esperando.";
+            ? "Scout ve movimiento, pero HYBRID todavÃ­a no lo considera lo bastante limpio para convertirlo en entrada."
+            : "Ninguna fuente esta suficientemente alineada; HYBRID sigue esperando.";
   document.getElementById("mode-relationship-card").innerHTML = `<div class="stat" style="height:100%;padding:18px;"><div class="row"><strong>Lectura actual</strong><span class="${hybridState === "ACTIVO" ? "good" : hybridState === "CERCA" ? "warn" : ""}">${data.signal.action}</span></div><div class="sub" style="margin-top:12px;">${relationshipSummary}</div><div class="grid-4" style="margin-top:16px;"><div class="stat"><div class="label">Hybrid</div><div class="value ${hybridState === "ACTIVO" ? "good" : hybridState === "CERCA" ? "warn" : ""}" style="font-size:26px;">${hybridState}</div></div><div class="stat"><div class="label">Balanced</div><div class="value ${balancedState === "ACTIVO" ? "good" : balancedState === "ESPERA" ? "warn" : ""}" style="font-size:26px;">${balancedState}</div></div><div class="stat"><div class="label">Scout limpio</div><div class="value ${scoutState === "ACTIVO" ? "good" : "warn"}" style="font-size:26px;">${scoutState}</div></div><div class="stat"><div class="label">Fuente</div><div class="value" style="font-size:26px;">${data.hybrid.source}</div></div></div></div>`;
   document.getElementById("mode-reasons-card").innerHTML = [
     ["Hybrid", hybridState, hybridState === "ACTIVO" ? `HYBRID entra con fuente ${data.hybrid.source}.` : `Fuente actual: ${data.hybrid.source} · score ${data.hybrid.projection.score.toFixed(0)} · expected ${fmtPct(data.hybrid.projection.expected)}`],
     ["Balanced", balancedState, modeReason(data.balanced, { ok: "Balanced aporta una base suficientemente limpia para HYBRID." })],
-    ["Scout limpio", scoutState, modeReason(data.scout, { ok: "Scout aporta frecuencia útil sin necesidad de abrir el sistema completo." })],
+    ["Scout limpio", scoutState, modeReason(data.scout, { ok: "Scout aporta frecuencia util sin necesidad de abrir el sistema completo." })],
   ]
     .map(
       ([label, state, note]) =>
@@ -1569,11 +1740,23 @@ function render(data, stats) {
   const strictVisible = visibleEntryStats(data.entries);
   const balancedVisible = visibleEntryStats(data.balancedEntries);
   const scoutVisible = visibleEntryStats(data.scoutEntries);
+  const hybridDisplayEntries = data.pendingGale
+    ? [
+        {
+          ...data.pendingGale,
+          actualDisplay: `${data.pendingGale.actual.toFixed(2)}x`,
+          outcome: "PENDING",
+          pnl: 0,
+          sourceMode: `${data.pendingGale.sourceMode} + GALE`,
+        },
+        ...data.entries,
+      ]
+    : data.entries;
   const summaryCards = (stats) => [
-    `<div class="stat"><div class="label">Mostradas</div><div class="value">${stats.total}</div><div class="sub">Últimos 50 registros</div></div>`,
+    `<div class="stat"><div class="label">Mostradas</div><div class="value">${stats.total}</div><div class="sub">Ultimos 50 registros</div></div>`,
     `<div class="stat"><div class="label">Ganadas</div><div class="value good">${stats.wins}</div><div class="sub">Resultados WIN</div></div>`,
-    `<div class="stat"><div class="label">Perdidas</div><div class="value bad">${stats.losses}</div><div class="sub">Resultados LOSS</div></div>`,
-    `<div class="stat"><div class="label">Win Rate</div><div class="value">${fmtPct(stats.winRate)}</div><div class="sub">${fmtUnits(stats.net)} neto visible</div></div>`,
+    `<div class="stat"><div class="label">Gales</div><div class="value warn">${stats.gales ?? 0}</div><div class="sub">Cierres en segundo ingreso</div></div>`,
+    `<div class="stat"><div class="label">Perdidas</div><div class="value bad">${stats.losses}</div><div class="sub">${fmtUnits(stats.net)} neto visible</div></div>`,
   ].join("");
   document.getElementById("scout-summary").innerHTML = summaryCards(strictVisible);
   document.getElementById("balanced-summary").innerHTML = summaryCards(balancedVisible);
@@ -1584,14 +1767,18 @@ function render(data, stats) {
   const decisionColor = data.signal.action === "ENTRAR" ? "#4ade80" : data.signal.action === "PREPARAR" ? "#38bdf8" : "#facc15";
   document.getElementById("exec-decision").textContent = decisionText;
   document.getElementById("exec-decision").style.color = decisionColor;
-  document.getElementById("exec-summary").textContent = data.signal.action === "ENTRAR" ? `Señal viva ${data.signal.mode}. ${data.signal.note}` : `Sin señal viva. ${data.signal.note}`;
+  document.getElementById("exec-summary").textContent = data.pendingGale
+    ? `Hay un gale pendiente desde ${fmtTime(data.pendingGale.time)}. Próximo intento disponible desde ${fmtTime(data.pendingGale.galeAt)}.`
+    : data.signal.action === "ENTRAR"
+      ? `Senal viva ${data.signal.mode}. ${data.signal.note}`
+      : `Sin senal viva. ${data.signal.note}`;
   document.getElementById("exec-mode").textContent = `Modo ${data.signal.mode === "NINGUNO" ? data.prem.mode : data.signal.mode}`;
   document.getElementById("exec-confidence").textContent = `${data.signal.confidence.toFixed(0)}%`;
-  document.getElementById("exec-win-rate").textContent = fmtPct(data.entryStats.winRate);
-  document.getElementById("exec-last-result").textContent = lastEntry ? (lastEntry.win ? "WIN" : "LOSS") : "-";
-  document.getElementById("exec-last-result").className = `value ${lastEntry ? (lastEntry.win ? "hit" : "miss") : ""}`;
+  document.getElementById("exec-win-rate").textContent = fmtPct(data.entryStats.successRate ?? 0);
+  document.getElementById("exec-last-result").textContent = lastEntry ? lastEntry.outcome || (lastEntry.win ? "WIN" : "LOSS") : "-";
+  document.getElementById("exec-last-result").className = `value ${lastEntry ? (lastEntry.outcome === "LOSS" ? "miss" : lastEntry.outcome === "GALE" ? "warn" : "hit") : ""}`;
   document.getElementById("exec-last-note").textContent = lastEntry
-    ? `${fmtTime(lastEntry.time)} · ${lastEntry.actual.toFixed(2)}x · ${lastEntry.sourceMode} · ${fmtUnits(lastEntry.pnl)}`
+    ? `${fmtTime(lastEntry.time)} Â· ${(lastEntry.actualDisplay || `${lastEntry.actual.toFixed(2)}x`)} Â· ${lastEntry.sourceMode} Â· ${fmtUnits(lastEntry.pnl)}`
     : "Todavia no hay entradas registradas";
   document.getElementById("exec-readiness").textContent = `${data.prem.readiness}%`;
 
@@ -1647,7 +1834,7 @@ function render(data, stats) {
         max === null ? round.multiplier >= min : round.multiplier >= min && round.multiplier < max
       ).length;
       const pct = data.rounds.length ? count / data.rounds.length : 0;
-      return `<div><div class="row"><strong>${label}</strong><span class="muted">${count} · ${fmtPct(pct)}</span></div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(
+      return `<div><div class="row"><strong>${label}</strong><span class="muted">${count} Â· ${fmtPct(pct)}</span></div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(
         pct * 100,
         2
       )}%"></div></div></div>`;
@@ -1672,19 +1859,19 @@ function render(data, stats) {
     )
     .join("");
 
-  document.getElementById("equity-summary").innerHTML = `<div class="grid-4" style="margin-top:16px;"><div class="stat"><div class="label">Equity final</div><div class="value ${data.equity.finalEquity >= 0 ? "good" : "bad"}">${fmtUnits(data.equity.finalEquity)}</div><div class="sub">Resultado acumulado de Atlas</div></div><div class="stat"><div class="label">Drawdown máximo</div><div class="value ${data.equity.maxDrawdown <= 4 ? "good" : "bad"}">${data.equity.maxDrawdown.toFixed(2)}u</div><div class="sub">Presión máxima histórica</div></div><div class="stat"><div class="label">Mejor pico</div><div class="value">${fmtUnits(data.equity.peakEquity)}</div><div class="sub">Máximo equity alcanzado</div></div><div class="stat"><div class="label">Entradas</div><div class="value">${data.entries.length}</div><div class="sub">Señales validadas por consenso</div></div></div>`;
+  document.getElementById("equity-summary").innerHTML = `<div class="grid-4" style="margin-top:16px;"><div class="stat"><div class="label">Equity final</div><div class="value ${data.equity.finalEquity >= 0 ? "good" : "bad"}">${fmtUnits(data.equity.finalEquity)}</div><div class="sub">Resultado acumulado de Atlas</div></div><div class="stat"><div class="label">Drawdown mÃ¡ximo</div><div class="value ${data.equity.maxDrawdown <= 4 ? "good" : "bad"}">${data.equity.maxDrawdown.toFixed(2)}u</div><div class="sub">PresiÃ³n mÃ¡xima histÃ³rica</div></div><div class="stat"><div class="label">Mejor pico</div><div class="value">${fmtUnits(data.equity.peakEquity)}</div><div class="sub">MÃ¡ximo equity alcanzado</div></div><div class="stat"><div class="label">Entradas</div><div class="value">${data.entries.length}</div><div class="sub">SeÃ±ales validadas por consenso</div></div></div>`;
   const recentCurve = data.equity.curve.slice(-30);
   const maxAbs = Math.max(1, ...recentCurve.map((point) => Math.max(Math.abs(point.equity), 1)));
   document.getElementById("equity-chart").innerHTML = recentCurve.length
     ? `<div class="sparkline">${recentCurve
-        .map((point) => `<div class="sparkbar ${point.pnl < 0 ? "loss" : ""}" title="${fmtTime(point.time)} · Equity ${fmtUnits(point.equity)} · DD ${point.drawdown.toFixed(2)}u" style="height:${Math.max(14, (Math.abs(point.equity) / maxAbs) * 120)}px"></div>`)
-        .join("")}</div><div class="sub">Últimas ${recentCurve.length} entradas aprobadas por Atlas.</div>`
-    : `<div class="stat" style="margin-top:16px;"><div class="sub">Todavía no hay suficientes entradas para dibujar la curva.</div></div>`;
+        .map((point) => `<div class="sparkbar ${point.pnl < 0 ? "loss" : ""}" title="${fmtTime(point.time)} Â· Equity ${fmtUnits(point.equity)} Â· DD ${point.drawdown.toFixed(2)}u" style="height:${Math.max(14, (Math.abs(point.equity) / maxAbs) * 120)}px"></div>`)
+        .join("")}</div><div class="sub">Ãšltimas ${recentCurve.length} entradas aprobadas por Atlas.</div>`
+    : `<div class="stat" style="margin-top:16px;"><div class="sub">TodavÃ­a no hay suficientes entradas para dibujar la curva.</div></div>`;
 
   document.getElementById("report-cards").innerHTML = [
     `<div class="stat" style="padding:16px;"><div class="row"><strong>Veredicto</strong><span class="${data.prem.mode === "OPERABLE" ? "good" : data.prem.mode === "OBSERVACION" ? "warn" : "bad"}">${data.prem.mode}</span></div><div class="sub">${data.report.verdict}</div></div>`,
     ...data.report.strengths.map((item) => `<div class="stat" style="padding:16px;"><div class="row"><strong>Fortaleza</strong><span class="good">OK</span></div><div class="sub">${item}</div></div>`),
-    ...data.report.cautions.map((item) => `<div class="stat" style="padding:16px;"><div class="row"><strong>Precaución</strong><span class="bad">Atención</span></div><div class="sub">${item}</div></div>`),
+    ...data.report.cautions.map((item) => `<div class="stat" style="padding:16px;"><div class="row"><strong>PrecauciÃ³n</strong><span class="bad">AtenciÃ³n</span></div><div class="sub">${item}</div></div>`),
   ].join("");
 
   document.getElementById("window-summary").innerHTML = [25, 50, 100, 200]
@@ -1693,7 +1880,7 @@ function render(data, stats) {
       const values = sample.map((round) => round.multiplier);
       return `<div class="stat" style="padding:14px;"><div class="label">Ult. ${size}</div><div class="value" style="font-size:28px;">${fmtPct(
         sample.length ? sample.filter((round) => round.multiplier >= 1.5).length / sample.length : 0
-      )}</div><div class="sub">Promedio ${avg(values).toFixed(2)}x · Mediana ${med(values).toFixed(2)}x</div></div>`;
+      )}</div><div class="sub">Promedio ${avg(values).toFixed(2)}x Â· Mediana ${med(values).toFixed(2)}x</div></div>`;
     })
     .join("");
 
@@ -1721,49 +1908,49 @@ function render(data, stats) {
     })
   );
 
-  table("scout-table", ["Hora", "Nivel", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(data.entries.map((entry) => ({ ...entry, consensus: entry.consensus ?? 100 }))));
+  table("scout-table", ["Hora", "Nivel", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(hybridDisplayEntries.map((entry) => ({ ...entry, consensus: entry.consensus ?? 100 }))));
   table("balanced-table", ["Hora", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(data.balancedEntries.map((entry) => ({ ...entry, sourceMode: "BALANCED", consensus: entry.consensus ?? 0 }))));
   table("strict-table", ["Hora", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(data.scoutEntries.map((entry) => ({ ...entry, sourceMode: "SCOUT-LIMPIO", consensus: entry.consensus ?? 0 }))));
   const dailyRows = (rows) =>
     rows.map(
       (row) =>
-        `<tr><td class="mono">${row.day}</td><td class="mono">${row.total}</td><td class="mono good">${row.wins}</td><td class="mono bad">${row.losses}</td><td class="mono">${fmtPct(row.winRate)}</td><td class="mono ${row.net >= 0 ? "good" : "bad"}">${fmtUnits(row.net)}</td><td class="mono">${fmtTime(row.oldest)} â†’ ${fmtTime(row.newest)}</td></tr>`
+        `<tr><td class="mono">${row.day}</td><td class="mono">${row.total}</td><td class="mono good">${row.wins}</td><td class="mono warn">${row.gales ?? 0}</td><td class="mono bad">${row.losses}</td><td class="mono">${fmtPct(row.successRate ?? row.winRate)}</td><td class="mono ${row.net >= 0 ? "good" : "bad"}">${fmtUnits(row.net)}</td><td class="mono">${fmtTime(row.oldest)} -> ${fmtTime(row.newest)}</td></tr>`
     );
-  table("scout-daily-table", ["Dia", "Total", "Ganadas", "Perdidas", "Win Rate", "Neto", "Rango"], dailyRows(data.daily.hybrid));
-  table("balanced-daily-table", ["Dia", "Total", "Ganadas", "Perdidas", "Win Rate", "Neto", "Rango"], dailyRows(data.daily.balanced));
-  table("strict-daily-table", ["Dia", "Total", "Ganadas", "Perdidas", "Win Rate", "Neto", "Rango"], dailyRows(data.daily.scout));
+  table("scout-daily-table", ["Dia", "Total", "Ganadas", "Gales", "Perdidas", "No-loss rate", "Neto", "Rango"], dailyRows(data.daily.hybrid));
+  table("balanced-daily-table", ["Dia", "Total", "Ganadas", "Gales", "Perdidas", "No-loss rate", "Neto", "Rango"], dailyRows(data.daily.balanced));
+  table("strict-daily-table", ["Dia", "Total", "Ganadas", "Gales", "Perdidas", "No-loss rate", "Neto", "Rango"], dailyRows(data.daily.scout));
   document.getElementById("profit-cycle-current").innerHTML = [
     `<div class="stat"><div class="label">Ciclo actual</div><div class="value ${data.currentGainCycle.net >= 0 ? "good" : "bad"}">${fmtUnits(data.currentGainCycle.net)}</div><div class="sub">Avance hacia +5.00u</div></div>`,
-    `<div class="stat"><div class="label">Entradas del ciclo</div><div class="value">${data.currentGainCycle.entries}</div><div class="sub">Señales usadas en el ciclo actual</div></div>`,
+    `<div class="stat"><div class="label">Operaciones del ciclo</div><div class="value">${data.currentGainCycle.entries}</div><div class="sub">${data.currentGainCycle.wins || 0} WIN · ${data.currentGainCycle.gales || 0} GALE · ${data.currentGainCycle.losses || 0} LOSS</div></div>`,
     `<div class="stat"><div class="label">Inicio del ciclo</div><div class="value" style="font-size:24px;">${data.currentGainCycle.startedAt ? fmtTime(data.currentGainCycle.startedAt) : "-"}</div><div class="sub">${data.currentGainCycle.startedAt ? dayLabel(data.currentGainCycle.startedAt) : "Esperando primer registro"}</div></div>`,
-    `<div class="stat"><div class="label">Tiempo transcurrido</div><div class="value" style="font-size:24px;">${data.currentGainCycle.entries ? formatDurationMs(data.currentGainCycle.durationMs) : "-"}</div><div class="sub">Duración del ciclo abierto</div></div>`,
+    `<div class="stat"><div class="label">Tiempo transcurrido</div><div class="value" style="font-size:24px;">${data.currentGainCycle.entries ? formatDurationMs(data.currentGainCycle.durationMs) : "-"}</div><div class="sub">${data.pendingGale ? `Gale pendiente · ${formatDurationMs(data.pendingGale.elapsedMs)}` : "Duración del ciclo abierto"}</div></div>`,
   ].join("");
   table(
     "profit-cycles-table",
-    ["Ciclo", "Inicio", "Cierre", "Duracion", "Entradas", "Ganadas", "Perdidas", "Neto", "Prom./entrada"],
+    ["Ciclo", "Inicio", "Cierre", "Duracion", "Ops", "Ganadas", "Gales", "Perdidas", "Neto", "Prom./op"],
     data.gainCycles.slice(0, 12).map(
       (cycle) =>
-        `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${fmtDateTime(cycle.startedAt)}</td><td class="mono">${fmtDateTime(cycle.completedAt)}</td><td class="mono">${formatDurationMs(cycle.durationMs)}</td><td class="mono">${cycle.entries}</td><td class="mono good">${cycle.wins}</td><td class="mono bad">${cycle.losses}</td><td class="mono ${cycle.net >= 5 ? "good" : ""}">${fmtUnits(cycle.net)}</td><td class="mono ${cycle.avgPerEntry >= 0 ? "good" : "bad"}">${fmtUnits(cycle.avgPerEntry)}</td></tr>`
+        `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${fmtDateTime(cycle.startedAt)}</td><td class="mono">${fmtDateTime(cycle.completedAt)}</td><td class="mono">${formatDurationMs(cycle.durationMs)}</td><td class="mono">${cycle.entries}</td><td class="mono good">${cycle.wins}</td><td class="mono warn">${cycle.gales ?? 0}</td><td class="mono bad">${cycle.losses}</td><td class="mono ${cycle.net >= 5 ? "good" : ""}">${fmtUnits(cycle.net)}</td><td class="mono ${cycle.avgPerEntry >= 0 ? "good" : "bad"}">${fmtUnits(cycle.avgPerEntry)}</td></tr>`
     )
   );
   const hybridOpenCycle = data.openCycles?.hybrid;
   const openCycleCards = [
     hybridOpenCycle
-      ? `<div class="stat"><div class="label">Hybrid abierto</div><div class="value" style="font-size:24px;">${hybridOpenCycle.records}/50</div><div class="sub">${hybridOpenCycle.wins}W · ${hybridOpenCycle.losses}L · ${fmtUnits(hybridOpenCycle.net)}</div></div>`
+      ? `<div class="stat"><div class="label">Hybrid abierto</div><div class="value" style="font-size:24px;">${hybridOpenCycle.records}/50</div><div class="sub">${hybridOpenCycle.wins}W · ${hybridOpenCycle.gales ?? 0}G · ${hybridOpenCycle.losses}L · ${fmtUnits(hybridOpenCycle.net)}</div></div>`
       : `<div class="stat"><div class="label">Hybrid abierto</div><div class="value" style="font-size:24px;">-</div><div class="sub">Sin ciclo abierto</div></div>`,
-    `<div class="stat"><div class="label">Win rate actual</div><div class="value" style="font-size:24px;">${hybridOpenCycle ? fmtPct(hybridOpenCycle.winRate) : "0.0%"}</div><div class="sub">Del ciclo Hybrid en curso</div></div>`,
-    `<div class="stat"><div class="label">Rango actual</div><div class="value" style="font-size:24px;">${hybridOpenCycle ? `${hybridOpenCycle.records}` : "0"}</div><div class="sub">${hybridOpenCycle ? `${fmtDateTime(hybridOpenCycle.oldest)} → ${fmtDateTime(hybridOpenCycle.newest)}` : "Esperando señales"}</div></div>`,
-    `<div class="stat"><div class="label">Histórico cerrado</div><div class="value" style="font-size:24px;">${(data.cycles?.hybrid || []).length}</div><div class="sub">Ciclos Hybrid congelados</div></div>`,
+    `<div class="stat"><div class="label">No-loss rate actual</div><div class="value" style="font-size:24px;">${hybridOpenCycle ? fmtPct(hybridOpenCycle.successRate ?? hybridOpenCycle.winRate) : "0.0%"}</div><div class="sub">Del ciclo Hybrid en curso</div></div>`,
+    `<div class="stat"><div class="label">Rango actual</div><div class="value" style="font-size:24px;">${hybridOpenCycle ? `${hybridOpenCycle.records}` : "0"}</div><div class="sub">${hybridOpenCycle ? `${fmtDateTime(hybridOpenCycle.oldest)} -> ${fmtDateTime(hybridOpenCycle.newest)}` : "Esperando senales"}</div></div>`,
+    `<div class="stat"><div class="label">Historico cerrado</div><div class="value" style="font-size:24px;">${(data.cycles?.hybrid || []).length}</div><div class="sub">Ciclos Hybrid congelados</div></div>`,
   ].join("");
   document.getElementById("cycle-open-summary").innerHTML = openCycleCards;
 
   const cycles = [...(data.cycles?.hybrid || [])].sort((a, b) => new Date(b.newest || 0) - new Date(a.newest || 0));
   table(
     "cycles-table",
-    ["Ciclo", "Registros", "Ganadas", "Perdidas", "Win Rate", "Neto", "Rango"],
+    ["Ciclo", "Registros", "Ganadas", "Gales", "Perdidas", "No-loss rate", "Neto", "Rango"],
     cycles.map(
       (cycle) =>
-        `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${cycle.records}</td><td class="mono good">${cycle.wins}</td><td class="mono bad">${cycle.losses}</td><td class="mono">${fmtPct(cycle.winRate)}</td><td class="mono ${cycle.net >= 0 ? "good" : "bad"}">${fmtUnits(cycle.net)}</td><td class="mono">${fmtDateTime(cycle.oldest)} → ${fmtDateTime(cycle.newest)}</td></tr>`
+        `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${cycle.records}</td><td class="mono good">${cycle.wins}</td><td class="mono warn">${cycle.gales ?? 0}</td><td class="mono bad">${cycle.losses}</td><td class="mono">${fmtPct(cycle.successRate ?? cycle.winRate)}</td><td class="mono ${cycle.net >= 0 ? "good" : "bad"}">${fmtUnits(cycle.net)}</td><td class="mono">${fmtDateTime(cycle.oldest)} -> ${fmtDateTime(cycle.newest)}</td></tr>`
     )
   );
 
@@ -2014,7 +2201,7 @@ document.getElementById("export-json-btn").addEventListener("click", () => sendM
 document.getElementById("export-csv-btn").addEventListener("click", () => sendMessage({ type: "EXPORT_CSV" }));
 document.getElementById("export-report-btn").addEventListener("click", exportReport);
 document.getElementById("clear-btn").addEventListener("click", async () => {
-  if (!confirm("Esto borrara todas las rondas almacenadas en esta extension. ¿Continuar?")) return;
+  if (!confirm("Esto borrara todas las rondas almacenadas en esta extension. Â¿Continuar?")) return;
   await sendMessage({ type: "CLEAR_DATA" });
   await refreshDashboard();
 });
@@ -2039,3 +2226,6 @@ window.addEventListener("focus", () => queueDashboardRefresh({ immediate: true }
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) queueDashboardRefresh({ immediate: true });
 });
+
+
+

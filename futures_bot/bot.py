@@ -33,6 +33,24 @@ class TradingBot:
         )
         self.status_server = StatusServer(self.account, self.portfolio, self.last_diagnostics)
 
+    async def _restore_runtime_state(self) -> None:
+        if self.settings.is_live:
+            return
+        stored_account, stored_positions = self.store.load_runtime_state()
+        if stored_account:
+            self.account = stored_account
+            self.status_server.account = self.account
+        if stored_positions:
+            for position in stored_positions:
+                self.portfolio.add_position(position)
+        if stored_account or stored_positions:
+            await self.monitor.on_restore(self.account, len(self.portfolio.open_positions()))
+
+    def _persist_runtime_state(self) -> None:
+        if self.settings.is_live:
+            return
+        self.store.save_runtime_state(self.account, self.portfolio.open_positions())
+
     async def _bootstrap_balance(self, client: BinanceFuturesClient) -> None:
         if not self.settings.is_live:
             return
@@ -79,6 +97,7 @@ class TradingBot:
         self.account.available_balance = max(self.account.available_balance - used_margin, 0.0)
         self.portfolio.add_position(position)
         self.store.record_open_trade(position)
+        self._persist_runtime_state()
         await self.monitor.on_trade_opened(
             symbol=signal.symbol,
             side=signal.side.value,
@@ -128,6 +147,7 @@ class TradingBot:
         )
         self.store.record_closed_trade(trade)
         self.store.record_equity(self.account)
+        self._persist_runtime_state()
         await self.monitor.on_trade_closed(
             symbol=symbol,
             side=position.side.value,
@@ -194,6 +214,7 @@ class TradingBot:
         try:
             async with BinanceFuturesClient(self.settings) as client:
                 await self._bootstrap_balance(client)
+                await self._restore_runtime_state()
                 data_engine = DataEngine(client, self.settings)
                 execution = ExecutionEngine(client, self.settings)
                 self.logger.info("Bot started in %s mode for %s", self.settings.mode, ",".join(self.settings.symbols))
@@ -240,6 +261,7 @@ class TradingBot:
                             )
                             last_heartbeat_slot = current_heartbeat_slot
                         self.store.record_equity(self.account)
+                        self._persist_runtime_state()
                         await asyncio.sleep(self.settings.poll_seconds)
                     except Exception as exc:
                         self.logger.exception("Main loop error: %s", exc)

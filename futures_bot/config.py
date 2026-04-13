@@ -23,7 +23,12 @@ def _get_list(name: str, default: list[str]) -> list[str]:
     value = os.getenv(name)
     if not value:
         return default
-    return [item.strip().upper() for item in value.split(",") if item.strip()]
+    normalized = value.strip()
+    if "=" in normalized:
+        maybe_name, maybe_values = normalized.split("=", 1)
+        if maybe_name.strip().upper() == name.upper():
+            normalized = maybe_values
+    return [item.strip().upper() for item in normalized.split(",") if item.strip()]
 
 
 @dataclass(slots=True)

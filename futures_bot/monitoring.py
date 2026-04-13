@@ -60,6 +60,18 @@ class Monitor:
         self.logger.info(message)
         await self.notifier.send(message)
 
+    async def on_restore(self, account: AccountState, open_positions: int) -> None:
+        message = (
+            "STATE RESTORED\n"
+            f"Equity: ${account.equity:.2f}\n"
+            f"Available: ${account.available_balance:.2f}\n"
+            f"Trades today: {account.trades_today}\n"
+            f"Open positions restored: {open_positions}\n"
+            f"Mode: {account.mode_profile.value}"
+        )
+        self.logger.info(message)
+        await self.notifier.send(message)
+
     async def on_trade(self, title: str, body: str) -> None:
         self.logger.info("%s | %s", title, body)
         await self.notifier.send(f"{title}\n{body}")

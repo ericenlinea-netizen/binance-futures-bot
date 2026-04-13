@@ -70,8 +70,10 @@ class Position:
     closed: bool = False
 
     def __post_init__(self) -> None:
-        self.highest_price = self.entry_price
-        self.lowest_price = self.entry_price
+        if self.highest_price == 0.0:
+            self.highest_price = self.entry_price
+        if self.lowest_price == 0.0:
+            self.lowest_price = self.entry_price
 
 
 @dataclass(slots=True)
@@ -117,4 +119,3 @@ class BacktestTrade:
     pnl_pct: float
     fee_paid: float
     reason: str
-
