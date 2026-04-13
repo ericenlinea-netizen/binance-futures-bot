@@ -57,8 +57,12 @@ class RiskEngine:
         raw_quantity = risk_amount / stop_distance
         leverage = min(self.settings.max_leverage, max(1, int((raw_quantity * signal.entry_price) / account.equity) + 1))
         notional = raw_quantity * signal.entry_price
-        if notional > account.available_balance * leverage:
-            raw_quantity = (account.available_balance * leverage) / signal.entry_price
+        usable_balance = max(account.available_balance * (1 - self.settings.margin_buffer_ratio), 0.0)
+        if usable_balance <= 0:
+            return 0.0, leverage
+        max_notional = usable_balance * leverage
+        if notional > max_notional:
+            raw_quantity = max_notional / signal.entry_price
         return max(raw_quantity, 0.0), leverage
 
     def register_realized_pnl(self, account: AccountState, pnl: float) -> None:

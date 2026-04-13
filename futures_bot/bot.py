@@ -50,6 +50,19 @@ class TradingBot:
         leverage: int,
         execution: ExecutionEngine,
     ) -> None:
+        required_margin = (signal.entry_price * quantity) / max(leverage, 1)
+        usable_balance = max(
+            self.account.available_balance * (1 - self.settings.margin_buffer_ratio),
+            0.0,
+        )
+        if required_margin > usable_balance:
+            self.logger.info(
+                "Skipping %s due to insufficient margin buffer: required=%.4f usable=%.4f",
+                signal.symbol,
+                required_margin,
+                usable_balance,
+            )
+            return
         result = await execution.place_entry(signal, quantity, leverage, order_type="MARKET")
         position = self.portfolio.build_position(
             symbol=signal.symbol,
@@ -62,7 +75,8 @@ class TradingBot:
             leverage=leverage,
         )
         self.account.trades_today += 1
-        self.account.available_balance -= (result.avg_price * quantity) / max(leverage, 1)
+        used_margin = (result.avg_price * quantity) / max(leverage, 1)
+        self.account.available_balance = max(self.account.available_balance - used_margin, 0.0)
         self.portfolio.add_position(position)
         self.store.record_open_trade(position)
         await self.monitor.on_trade(
@@ -84,7 +98,8 @@ class TradingBot:
         pnl = (result.avg_price - position.entry_price) * quantity * direction
         fees = (position.entry_price * quantity * self.settings.fee_rate) + (result.avg_price * quantity * self.settings.fee_rate)
         pnl -= fees
-        self.account.available_balance += (position.entry_price * quantity) / max(position.leverage, 1)
+        released_margin = (position.entry_price * quantity) / max(position.leverage, 1)
+        self.account.available_balance = min(self.account.available_balance + released_margin, self.account.equity)
         self.risk.register_realized_pnl(self.account, pnl)
         if quantity >= position.quantity or reason != "partial_tp":
             self.portfolio.close_position(symbol)

@@ -56,6 +56,7 @@ class Settings:
     initial_equity: float = 250.0
     service_port: int = 8000
     heartbeat_minutes: int = 15
+    margin_buffer_ratio: float = 0.05
 
     @property
     def is_live(self) -> bool:
@@ -98,4 +99,5 @@ class Settings:
             initial_equity=float(os.getenv("INITIAL_EQUITY", "250")),
             service_port=int(os.getenv("PORT", os.getenv("SERVICE_PORT", "8000"))),
             heartbeat_minutes=int(os.getenv("HEARTBEAT_MINUTES", "15")),
+            margin_buffer_ratio=float(os.getenv("MARGIN_BUFFER_RATIO", "0.05")),
         )
