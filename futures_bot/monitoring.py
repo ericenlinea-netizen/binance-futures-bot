@@ -51,11 +51,11 @@ class Monitor:
 
     async def on_startup(self, mode: str, symbols: list[str], account: AccountState) -> None:
         message = (
-            "Bot started\n"
-            f"Mode: {mode}\n"
+            "SYSTEM ONLINE\n"
+            f"Mode: {mode.upper()}\n"
             f"Symbols: {', '.join(symbols)}\n"
-            f"Equity: {account.equity:.2f}\n"
-            f"Available balance: {account.available_balance:.2f}"
+            f"Equity: ${account.equity:.2f}\n"
+            f"Available: ${account.available_balance:.2f}"
         )
         self.logger.info(message)
         await self.notifier.send(message)
@@ -64,18 +64,77 @@ class Monitor:
         self.logger.info("%s | %s", title, body)
         await self.notifier.send(f"{title}\n{body}")
 
+    async def on_trade_opened(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        entry: float,
+        score: float,
+        leverage: int,
+        stop_loss: float,
+        tp1: float,
+        tp2: float,
+        available_balance: float,
+    ) -> None:
+        body = (
+            "NEW POSITION\n"
+            f"Symbol: {symbol}\n"
+            f"Side: {side}\n"
+            f"Qty: {quantity:.4f}\n"
+            f"Entry: {entry:.6f}\n"
+            f"Score: {score:.1f}\n"
+            f"Leverage: {leverage}x\n"
+            f"Stop: {stop_loss:.6f}\n"
+            f"TP1: {tp1:.6f}\n"
+            f"TP2: {tp2:.6f}\n"
+            f"Available balance: ${available_balance:.2f}"
+        )
+        self.logger.info(body)
+        await self.notifier.send(body)
+
+    async def on_trade_closed(
+        self,
+        symbol: str,
+        side: str,
+        reason: str,
+        quantity: float,
+        entry: float,
+        exit_price: float,
+        pnl: float,
+        equity: float,
+        fee_paid: float,
+    ) -> None:
+        body = (
+            "POSITION CLOSED\n"
+            f"Symbol: {symbol}\n"
+            f"Side: {side}\n"
+            f"Reason: {reason}\n"
+            f"Qty: {quantity:.4f}\n"
+            f"Entry: {entry:.6f}\n"
+            f"Exit: {exit_price:.6f}\n"
+            f"PnL: ${pnl:.2f}\n"
+            f"Fees: ${fee_paid:.2f}\n"
+            f"Equity: ${equity:.2f}"
+        )
+        self.logger.info(body)
+        await self.notifier.send(body)
+
     async def on_losses(self, account: AccountState) -> None:
         if account.consecutive_losses >= 2:
             await self.notifier.send(
-                f"Loss streak alert\nConsecutive losses: {account.consecutive_losses}\nMode: {account.mode_profile.value}"
+                "LOSS STREAK ALERT\n"
+                f"Consecutive losses: {account.consecutive_losses}\n"
+                f"Mode: {account.mode_profile.value}"
             )
 
     async def daily_summary(self, account: AccountState) -> None:
         summary = (
-            "Daily summary\n"
-            f"Equity: {account.equity:.2f}\n"
-            f"Daily PnL: {account.daily_pnl:.2f}\n"
-            f"Total PnL: {account.total_pnl:.2f}\n"
+            "DAILY SUMMARY\n"
+            f"Equity: ${account.equity:.2f}\n"
+            f"Daily PnL: ${account.daily_pnl:.2f}\n"
+            f"Total PnL: ${account.total_pnl:.2f}\n"
+            f"Trades today: {account.trades_today}\n"
             f"Mode: {account.mode_profile.value}\n"
             f"Circuit breaker: {account.circuit_breaker_active}"
         )
@@ -88,12 +147,13 @@ class Monitor:
             rows = []
             for symbol, diag in diagnostics.items():
                 blockers = ",".join(diag.get("blockers", [])[:2]) or "none"
-                rows.append(f"{symbol}: score={diag.get('score', 0):.1f} blockers={blockers}")
+                rows.append(f"{symbol}: score={diag.get('score', 0):.1f} | blockers={blockers}")
             details = "\n" + "\n".join(rows[:4])
         message = (
-            "Bot heartbeat\n"
-            f"Equity: {account.equity:.2f}\n"
-            f"Daily PnL: {account.daily_pnl:.2f}\n"
+            "BOT HEARTBEAT\n"
+            f"Equity: ${account.equity:.2f}\n"
+            f"Available: ${account.available_balance:.2f}\n"
+            f"Daily PnL: ${account.daily_pnl:.2f}\n"
             f"Trades today: {account.trades_today}\n"
             f"Open positions: {open_positions}\n"
             f"Mode: {account.mode_profile.value}\n"

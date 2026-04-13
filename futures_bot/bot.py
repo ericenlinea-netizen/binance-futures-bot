@@ -79,9 +79,17 @@ class TradingBot:
         self.account.available_balance = max(self.account.available_balance - used_margin, 0.0)
         self.portfolio.add_position(position)
         self.store.record_open_trade(position)
-        await self.monitor.on_trade(
-            f"Trade opened {signal.symbol}",
-            f"{signal.side.value} qty={quantity:.4f} entry={result.avg_price:.2f} score={signal.score:.1f} leverage={leverage}x",
+        await self.monitor.on_trade_opened(
+            symbol=signal.symbol,
+            side=signal.side.value,
+            quantity=quantity,
+            entry=result.avg_price,
+            score=signal.score,
+            leverage=leverage,
+            stop_loss=signal.stop_loss,
+            tp1=signal.take_profit_1,
+            tp2=signal.take_profit_2,
+            available_balance=self.account.available_balance,
         )
 
     async def _close_position(
@@ -120,9 +128,16 @@ class TradingBot:
         )
         self.store.record_closed_trade(trade)
         self.store.record_equity(self.account)
-        await self.monitor.on_trade(
-            f"Trade closed {symbol}",
-            f"reason={reason} qty={quantity:.4f} exit={result.avg_price:.2f} pnl={pnl:.2f} equity={self.account.equity:.2f}",
+        await self.monitor.on_trade_closed(
+            symbol=symbol,
+            side=position.side.value,
+            reason=reason,
+            quantity=quantity,
+            entry=position.entry_price,
+            exit_price=result.avg_price,
+            pnl=pnl,
+            equity=self.account.equity,
+            fee_paid=fees,
         )
         await self.monitor.on_losses(self.account)
 
