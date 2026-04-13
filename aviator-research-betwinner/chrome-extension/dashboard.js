@@ -1883,20 +1883,79 @@ function render(data, stats) {
 }
 
 async function refreshDashboard() {
+  return performDashboardRefresh(true);
+}
+
+const DASHBOARD_REFRESH_MS = 2000;
+let refreshInFlight = false;
+let refreshQueued = false;
+let scheduledRefresh = null;
+let lastDashboardSignature = "";
+
+function dashboardSignature(rounds, stats) {
+  if (!rounds.length) return `0|${stats?.totalRounds ?? 0}|${stats?.lastCapturedAt ?? ""}`;
+  const latest = rounds[0] || rounds[rounds.length - 1] || {};
+  return [
+    rounds.length,
+    latest.createdAt || latest.capturedAt || latest.id || latest.multiplier || "",
+    stats?.totalRounds ?? "",
+    stats?.lastCapturedAt ?? "",
+  ].join("|");
+}
+
+async function performDashboardRefresh(force = false) {
+  if (refreshInFlight) {
+    refreshQueued = true;
+    return;
+  }
+
+  refreshInFlight = true;
   try {
     const response = await sendMessage({ type: "GET_DATA" });
     if (!response?.ok) return;
+
     const rounds = response.rounds ?? [];
     const stats = response.stats ?? {};
+    const signature = dashboardSignature(rounds, stats);
+
+    if (!force && signature === lastDashboardSignature) {
+      return;
+    }
+
     let data = build(rounds);
     const frozenHybridEntries = await freezeHybridEntries(data.entries);
     data = rebuildHybridFromFrozen(data, frozenHybridEntries);
     data.daily = await freezeHistoricalDailyReports(data.daily);
     data.cycles = await freezeHistoricalCycles(data.cycles);
     render(data, stats);
+    lastDashboardSignature = signature;
   } catch (error) {
     console.log("[Aviator Research] dashboard refresh failed:", error?.message ?? error);
+  } finally {
+    refreshInFlight = false;
+    if (refreshQueued) {
+      refreshQueued = false;
+      queueDashboardRefresh({ immediate: true });
+    }
   }
+}
+
+function queueDashboardRefresh(options = {}) {
+  const { immediate = false, force = false } = options;
+
+  if (scheduledRefresh) {
+    clearTimeout(scheduledRefresh);
+    scheduledRefresh = null;
+  }
+
+  if (immediate) {
+    return performDashboardRefresh(force);
+  }
+
+  scheduledRefresh = setTimeout(() => {
+    scheduledRefresh = null;
+    performDashboardRefresh(force);
+  }, 150);
 }
 
 function exportReport() {
@@ -1960,14 +2019,23 @@ document.getElementById("clear-btn").addEventListener("click", async () => {
   await refreshDashboard();
 });
 
-refreshDashboard();
-setInterval(refreshDashboard, 4000);
+queueDashboardRefresh({ immediate: true, force: true });
+setInterval(() => queueDashboardRefresh(), DASHBOARD_REFRESH_MS);
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.researchRounds || changes.researchSettings)) {
-    refreshDashboard();
+  if (
+    areaName === "local" &&
+    (
+      changes.researchRounds ||
+      changes.researchSettings ||
+      changes.frozenHybridEntries ||
+      changes.frozenDailyReports ||
+      changes.frozenCycleReports
+    )
+  ) {
+    queueDashboardRefresh();
   }
 });
-window.addEventListener("focus", refreshDashboard);
+window.addEventListener("focus", () => queueDashboardRefresh({ immediate: true }));
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refreshDashboard();
+  if (!document.hidden) queueDashboardRefresh({ immediate: true });
 });

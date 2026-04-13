@@ -47,6 +47,9 @@ class RiskEngine:
             return False, "invalid_market_data"
         if signal.symbol in {position.symbol for position in open_positions}:
             return False, "symbol_already_open"
+        same_side_positions = sum(1 for position in open_positions if position.side is signal.side)
+        if same_side_positions >= self.settings.max_same_side_positions:
+            return False, "same_side_limit"
         return True, "ok"
 
     def calculate_position_size(self, account: AccountState, signal: TradeSignal) -> tuple[float, int]:

@@ -57,8 +57,9 @@ class Settings:
     initial_equity: float = 250.0
     service_port: int = 8000
     heartbeat_minutes: int = 15
-    margin_buffer_ratio: float = 0.05
+    margin_buffer_ratio: float = 0.10
     local_timezone: str = "America/Bogota"
+    max_same_side_positions: int = 1
 
     @property
     def is_live(self) -> bool:
@@ -105,6 +106,7 @@ class Settings:
             initial_equity=float(os.getenv("INITIAL_EQUITY", "250")),
             service_port=int(os.getenv("PORT", os.getenv("SERVICE_PORT", "8000"))),
             heartbeat_minutes=int(os.getenv("HEARTBEAT_MINUTES", "15")),
-            margin_buffer_ratio=float(os.getenv("MARGIN_BUFFER_RATIO", "0.05")),
+            margin_buffer_ratio=float(os.getenv("MARGIN_BUFFER_RATIO", "0.10")),
             local_timezone=os.getenv("LOCAL_TIMEZONE", "America/Bogota"),
+            max_same_side_positions=int(os.getenv("MAX_SAME_SIDE_POSITIONS", "1")),
         )
