@@ -60,6 +60,7 @@ class Settings:
     margin_buffer_ratio: float = 0.10
     local_timezone: str = "America/Bogota"
     max_same_side_positions: int = 1
+    hourly_summary_minutes: int = 60
 
     @property
     def is_live(self) -> bool:
@@ -109,4 +110,5 @@ class Settings:
             margin_buffer_ratio=float(os.getenv("MARGIN_BUFFER_RATIO", "0.10")),
             local_timezone=os.getenv("LOCAL_TIMEZONE", "America/Bogota"),
             max_same_side_positions=int(os.getenv("MAX_SAME_SIDE_POSITIONS", "1")),
+            hourly_summary_minutes=int(os.getenv("HOURLY_SUMMARY_MINUTES", "60")),
         )

@@ -146,7 +146,7 @@ class TradingBot:
         symbol: str,
         data_engine: DataEngine,
         execution: ExecutionEngine,
-    ) -> None:
+    ) -> TradeSignal | None:
         snapshot = await data_engine.snapshot(symbol)
         closes = [c.close for c in snapshot.base_candles]
         if len(closes) >= 2:
@@ -163,33 +163,31 @@ class TradingBot:
                 quantity = quantity or existing.quantity
             if exit_reason and quantity > 0:
                 await self._close_position(symbol, quantity, closes[-1], exit_reason, execution)
-            return
+            return None
 
         signal = self.strategy.evaluate(snapshot)
         if not signal:
-            return
+            return None
 
         await self.monitor.on_signal(signal)
         self.store.record_signal(signal.symbol, signal.side.value, signal.score, signal.reasons, signal.timestamp.isoformat())
+        return signal
 
-        open_symbols = [position.symbol for position in self.portfolio.open_positions()]
-        if self.portfolio.correlation_too_high(signal.symbol, open_symbols):
-            return
-
-        allowed, reason = self.risk.validate_signal(self.account, signal, self.portfolio.open_positions())
-        if not allowed:
-            self.logger.info("Signal rejected for %s: %s", signal.symbol, reason)
-            return
-
-        quantity, leverage = self.risk.calculate_position_size(self.account, signal)
-        if quantity <= 0:
-            return
-
-        await self._open_position(signal, quantity, leverage, execution)
+    def _rank_signals(self, signals: list[TradeSignal]) -> list[TradeSignal]:
+        return sorted(
+            signals,
+            key=lambda signal: (
+                signal.score,
+                signal.trend_strength,
+                signal.atr / max(signal.entry_price, 1e-9),
+            ),
+            reverse=True,
+        )
 
     async def run(self) -> None:
         last_summary_day = ""
         last_heartbeat_slot = ""
+        last_hourly_summary_slot = ""
         if self.settings.is_live and (not self.settings.api_key or not self.settings.api_secret):
             raise RuntimeError("Live mode requires BINANCE_API_KEY and BINANCE_API_SECRET")
         await self.status_server.start(self.settings.service_port)
@@ -203,15 +201,37 @@ class TradingBot:
 
                 while True:
                     try:
-                        await asyncio.gather(
+                        scanned = await asyncio.gather(
                             *(self._scan_symbol(symbol, data_engine, execution) for symbol in self.settings.symbols)
                         )
+                        candidates = [signal for signal in scanned if signal is not None]
+                        ranked_signals = self._rank_signals(candidates)
+                        for signal in ranked_signals:
+                            open_positions = self.portfolio.open_positions()
+                            open_symbols = [position.symbol for position in open_positions]
+                            if self.portfolio.correlation_too_high(signal.symbol, open_symbols):
+                                continue
+                            allowed, reason = self.risk.validate_signal(self.account, signal, open_positions)
+                            if not allowed:
+                                self.logger.info("Signal rejected for %s: %s", signal.symbol, reason)
+                                continue
+                            quantity, leverage = self.risk.calculate_position_size(self.account, signal)
+                            if quantity <= 0:
+                                continue
+                            await self._open_position(signal, quantity, leverage, execution)
+
                         now = datetime.now(self.settings.tzinfo)
                         current_day = now.date().isoformat()
                         current_heartbeat_slot = f"{current_day}-{now.hour}-{now.minute // max(self.settings.heartbeat_minutes, 1)}"
+                        current_hourly_summary_slot = (
+                            f"{current_day}-{now.hour}-{now.minute // max(self.settings.hourly_summary_minutes, 1)}"
+                        )
                         if last_summary_day != current_day and now.hour == 23:
                             await self.monitor.daily_summary(self.account)
                             last_summary_day = current_day
+                        if current_hourly_summary_slot != last_hourly_summary_slot:
+                            await self.monitor.hourly_capital_summary(self.account)
+                            last_hourly_summary_slot = current_hourly_summary_slot
                         if current_heartbeat_slot != last_heartbeat_slot:
                             await self.monitor.heartbeat(
                                 self.account,

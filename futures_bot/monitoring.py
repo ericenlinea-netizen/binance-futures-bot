@@ -141,6 +141,19 @@ class Monitor:
         self.logger.info(summary)
         await self.notifier.send(summary)
 
+    async def hourly_capital_summary(self, account: AccountState) -> None:
+        summary = (
+            "RESUMEN CAPITAL\n"
+            f"Capital actual: ${account.equity:.2f}\n"
+            f"Disponible: ${account.available_balance:.2f}\n"
+            f"Ganancia/perdida del dia: ${account.daily_pnl:.2f}\n"
+            f"Resultado acumulado: ${account.total_pnl:.2f}\n"
+            f"Operaciones hoy: {account.trades_today}\n"
+            f"Modo: {account.mode_profile.value}"
+        )
+        self.logger.info(summary)
+        await self.notifier.send(summary)
+
     async def heartbeat(self, account: AccountState, open_positions: int, diagnostics: dict[str, dict] | None = None) -> None:
         details = ""
         if diagnostics:
