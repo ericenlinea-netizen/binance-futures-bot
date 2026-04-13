@@ -440,7 +440,7 @@ function atlasScout(rounds, index, calibrationData) {
 
 function atlasHybrid(rounds, index, calibrationData) {
   const proj = projection(rounds, index, calibrationData);
-  if (index < 12) return { decision: "WAIT", source: "NONE", confidence: 0, projection: proj };
+  if (index < 12) return { decision: "WAIT", source: "NONE", tier: "-", confidence: 0, projection: proj };
 
   const balancedRow = atlasBalanced(rounds, index, calibrationData);
   const scoutRow = atlasScout(rounds, index, calibrationData);
@@ -461,18 +461,18 @@ function atlasHybrid(rounds, index, calibrationData) {
   const balancedAssist =
     proj.regime !== "SOBRECALENTADO" &&
     (proj.regime === "COMPRESION" || proj.regime === "RECUPERACION" || proj.regime === "NEUTRAL") &&
-    (snap.compression >= 0.34 || snap.microCompression >= 0.12 || snap.dry15 >= 1) &&
-    snap.shockRisk <= calibrationData.atlas.shockMax + 0.18 &&
-    snap.burstRisk <= calibrationData.atlas.burstMax + 0.24 &&
-    snap.shortHit15 <= Math.max(0.66, calibrationData.atlas.mediumHitMax + 0.14) &&
-    snap.vol6 <= calibrationData.atlas.vol6Max + 0.55 &&
-    proj.score >= 44 &&
-    proj.expected >= Math.max((calibrationData.base || 0) - 0.01, 0.41);
+    (snap.compression >= 0.3 || snap.microCompression >= 0.1 || snap.dry15 >= 1) &&
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.2 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.28 &&
+    snap.shortHit15 <= Math.max(0.7, calibrationData.atlas.mediumHitMax + 0.18) &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 0.65 &&
+    proj.score >= 42 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.02, 0.4);
   const scoutClean =
     scoutRow.decision === "ENTER" &&
     proj.regime !== "SOBRECALENTADO" &&
-    scoutRow.confidence >= 52 &&
-    proj.expected >= Math.max((calibrationData.base || 0) - 0.01, 0.42) &&
+    scoutRow.confidence >= 48 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.02, 0.41) &&
     immediateClean &&
     lowPressure;
   const balancedClean =
@@ -482,15 +482,18 @@ function atlasHybrid(rounds, index, calibrationData) {
     return {
       decision: "ENTER",
       source: "DUAL",
+      tier: proj.expected >= 0.47 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 62 ? "A" : "B",
       confidence: clamp(Math.max(balancedRow.confidence, scoutRow.confidence, 58) + 6, 0, 100),
       projection: proj,
     };
   }
   if (balancedClean) {
+    const tier = balancedRow.decision === "ENTER" && proj.expected >= 0.46 && Math.max(balancedRow.confidence, 54) >= 60 ? "A" : "B";
     return {
       decision: "ENTER",
       source: balancedRow.decision === "ENTER" ? "BALANCED" : "BALANCED-ASSIST",
-      confidence: Math.max(balancedRow.confidence, 54),
+      tier,
+      confidence: Math.max(balancedRow.confidence, 52),
       projection: proj,
     };
   }
@@ -498,6 +501,7 @@ function atlasHybrid(rounds, index, calibrationData) {
     return {
       decision: "ENTER",
       source: "SCOUT-LIMPIO",
+      tier: proj.expected >= 0.43 && scoutRow.confidence >= 54 ? "B" : "C",
       confidence: scoutRow.confidence,
       projection: proj,
     };
@@ -505,6 +509,7 @@ function atlasHybrid(rounds, index, calibrationData) {
   return {
     decision: "WAIT",
     source: "NONE",
+    tier: "-",
     confidence: Math.max(balancedRow.confidence, scoutRow.confidence),
     projection: proj,
   };
@@ -871,7 +876,7 @@ function build(roundsRaw) {
   for (let i = 12; i < rounds.length; i += 1) {
     const hybridRow = atlasHybrid(rounds, i, calibrationData);
     if (hybridRow.decision !== "ENTER") continue;
-    entries.push({
+    const candidate = {
       time: rounds[i].createdAt,
       score: hybridRow.projection.score,
       confidence: hybridRow.confidence,
@@ -880,9 +885,12 @@ function build(roundsRaw) {
       actual: rounds[i].multiplier,
       regime: hybridRow.projection.regime,
       sourceMode: hybridRow.source,
+      tier: hybridRow.tier,
       win: rounds[i].multiplier >= 1.5,
       pnl: rounds[i].multiplier >= 1.5 ? 0.5 : -1,
-    });
+    };
+    if (!shouldAcceptHybridEntry(entries, candidate, rounds.length)) continue;
+    entries.push(candidate);
   }
 
   const entryStats = {
@@ -923,6 +931,8 @@ function build(roundsRaw) {
     balanced: dailyStats(balancedEntries, "BALANCED"),
     scout: dailyStats(scoutEntries, "SCOUT"),
   };
+  const gainCycles = profitCycles(entries, 5);
+  const currentGainCycle = currentProfitCycleState(entries, 5);
   const regimes = regimeStats(entries);
   const balancedRegimes = regimeStats(balancedEntries);
   const scoutRegimes = regimeStats(scoutEntries);
@@ -960,10 +970,10 @@ function build(roundsRaw) {
     balanced: entries.filter((entry) => entry.sourceMode === "BALANCED").length,
     scout: entries.filter((entry) => entry.sourceMode === "SCOUT-LIMPIO").length,
   };
-  const report = buildReport({ rounds, proj, strategy, balanced, scout, hybrid, consensus, validation, wf, bands, rob, prem, entries, strictEntries, entryStats, balancedEntries, balancedStats, scoutEntries, scoutStats, cadence, cycles, openCycles, daily, regimes, balancedRegimes, scoutRegimes, rules, calibrationData, equity, balancedEquity, scoutEquity, hybridSources });
+  const report = buildReport({ rounds, proj, strategy, balanced, scout, hybrid, consensus, validation, wf, bands, rob, prem, entries, strictEntries, entryStats, balancedEntries, balancedStats, scoutEntries, scoutStats, cadence, cycles, openCycles, daily, gainCycles, currentGainCycle, regimes, balancedRegimes, scoutRegimes, rules, calibrationData, equity, balancedEquity, scoutEquity, hybridSources });
   const signal = buildLiveSignal({ proj, strategy, balanced, scout, hybrid, consensus, entries, balancedEntries, scoutEntries });
 
-  return { rounds, proj, strategy, balanced, scout, hybrid, strictEntries, hybridSources, consensus, signal, validation, wf, bands, rob, prem, entries, entryStats, balancedEntries, balancedStats, scoutEntries, scoutStats, cadence, cycles, openCycles, daily, regimes, balancedRegimes, scoutRegimes, rules, calibrationData, equity, balancedEquity, scoutEquity, report };
+  return { rounds, proj, strategy, balanced, scout, hybrid, strictEntries, hybridSources, consensus, signal, validation, wf, bands, rob, prem, entries, entryStats, balancedEntries, balancedStats, scoutEntries, scoutStats, cadence, cycles, openCycles, daily, gainCycles, currentGainCycle, regimes, balancedRegimes, scoutRegimes, rules, calibrationData, equity, balancedEquity, scoutEquity, report };
 }
 
 function table(id, headers, rows) {
@@ -979,7 +989,7 @@ function entryRows(entries) {
     .slice(0, 50)
     .map(
       (entry) =>
-        `<tr><td>${fmtDateTime(entry.time)}</td><td>${entry.sourceMode || "-"}</td><td>${entry.regime}</td><td class="mono">${entry.score.toFixed(0)}</td><td class="mono">${entry.confidence.toFixed(0)}%</td><td class="mono">${entry.consensus ? entry.consensus.toFixed(0) : 0}%</td><td class="mono">${fmtPct(
+        `<tr><td>${fmtDateTime(entry.time)}</td><td>${entry.tier || "-"}</td><td>${entry.sourceMode || "-"}</td><td>${entry.regime}</td><td class="mono">${entry.score.toFixed(0)}</td><td class="mono">${entry.confidence.toFixed(0)}%</td><td class="mono">${entry.consensus ? entry.consensus.toFixed(0) : 0}%</td><td class="mono">${fmtPct(
           entry.expected
         )}</td><td class="mono ${entry.win ? "hit" : "miss"}">${entry.actual.toFixed(2)}x</td><td class="${entry.win ? "hit" : "miss"}">${entry.win ? "WIN" : "LOSS"}</td><td class="mono ${
           entry.pnl >= 0 ? "good" : "bad"
@@ -1064,6 +1074,263 @@ function dailyStats(entries, modeLabel) {
       winRate: row.total ? row.wins / row.total : 0,
     }))
     .sort((a, b) => new Date(b.newest || 0) - new Date(a.newest || 0));
+}
+
+function formatDurationMs(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "-";
+  const totalMinutes = Math.round(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes} min`;
+  return `${hours}h ${minutes}m`;
+}
+
+function profitCycles(entries, targetNet = 5) {
+  const ordered = entries
+    .slice()
+    .sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+
+  const completed = [];
+  let buffer = [];
+  let net = 0;
+
+  for (const entry of ordered) {
+    buffer.push(entry);
+    net += entry.pnl;
+
+    if (net >= targetNet) {
+      const wins = buffer.filter((item) => item.win).length;
+      const losses = buffer.length - wins;
+      const startedAt = buffer[0]?.time ?? null;
+      const completedAt = buffer[buffer.length - 1]?.time ?? null;
+      completed.push({
+        cycle: completed.length + 1,
+        startedAt,
+        completedAt,
+        durationMs: startedAt && completedAt ? new Date(completedAt).getTime() - new Date(startedAt).getTime() : 0,
+        entries: buffer.length,
+        wins,
+        losses,
+        net,
+        avgPerEntry: buffer.length ? net / buffer.length : 0,
+      });
+      buffer = [];
+      net = 0;
+    }
+  }
+
+  return completed.sort((a, b) => new Date(b.completedAt || 0) - new Date(a.completedAt || 0));
+}
+
+function currentProfitCycleState(entries, targetNet = 5) {
+  const ordered = entries
+    .slice()
+    .sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+
+  let buffer = [];
+  let net = 0;
+
+  for (const entry of ordered) {
+    buffer.push(entry);
+    net += entry.pnl;
+    if (net >= targetNet) {
+      buffer = [];
+      net = 0;
+    }
+  }
+
+  const startedAt = buffer[0]?.time ?? null;
+  const lastAt = buffer[buffer.length - 1]?.time ?? null;
+  return {
+    net,
+    entries: buffer.length,
+    startedAt,
+    lastAt,
+    durationMs: startedAt && lastAt ? new Date(lastAt).getTime() - new Date(startedAt).getTime() : 0,
+  };
+}
+
+function hybridBucketPerformance(entries, candidate, size = 40) {
+  const sample = entries
+    .filter((entry) => entry.tier === candidate.tier && entry.sourceMode === candidate.sourceMode)
+    .slice(-size);
+  const wins = sample.filter((entry) => entry.win).length;
+  const net = sample.reduce((sum, entry) => sum + entry.pnl, 0);
+  return {
+    total: sample.length,
+    winRate: sample.length ? wins / sample.length : 0,
+    roi: sample.length ? net / sample.length : 0,
+    net,
+  };
+}
+
+function hybridSourcePerformance(entries, candidate, size = 40) {
+  const sample = entries
+    .filter((entry) => entry.sourceMode === candidate.sourceMode)
+    .slice(-size);
+  const wins = sample.filter((entry) => entry.win).length;
+  const net = sample.reduce((sum, entry) => sum + entry.pnl, 0);
+  return {
+    total: sample.length,
+    winRate: sample.length ? wins / sample.length : 0,
+    roi: sample.length ? net / sample.length : 0,
+    net,
+  };
+}
+
+function hybridTierPerformance(entries, tier, size = 60) {
+  const sample = entries.filter((entry) => entry.tier === tier).slice(-size);
+  const wins = sample.filter((entry) => entry.win).length;
+  const net = sample.reduce((sum, entry) => sum + entry.pnl, 0);
+  return {
+    total: sample.length,
+    winRate: sample.length ? wins / sample.length : 0,
+    roi: sample.length ? net / sample.length : 0,
+    net,
+  };
+}
+
+function minutesSinceLastEntry(entries, currentTime) {
+  if (!entries.length || !currentTime) return Infinity;
+  const last = entries[entries.length - 1]?.time;
+  const currentMs = new Date(currentTime).getTime();
+  const lastMs = new Date(last || 0).getTime();
+  if (!Number.isFinite(currentMs) || !Number.isFinite(lastMs)) return Infinity;
+  return Math.max(0, (currentMs - lastMs) / 60000);
+}
+
+function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
+  if (!candidate) return false;
+
+  const recent = recentQuality(existingEntries, 12);
+  const bucket = hybridBucketPerformance(existingEntries, candidate, 40);
+  const source = hybridSourcePerformance(existingEntries, candidate, 40);
+  const tierPerf = hybridTierPerformance(existingEntries, candidate.tier, 60);
+  const cycle = currentProfitCycleState(existingEntries, 5);
+  const idleMinutes = minutesSinceLastEntry(existingEntries, candidate.time);
+  const matureSample = totalRounds >= 5000;
+  const cycleSlow =
+    cycle.entries >= 6 &&
+    cycle.net < 2 &&
+    cycle.durationMs >= 12 * 60000;
+  const cycleVerySlow =
+    cycle.entries >= 9 &&
+    cycle.net < 1.5 &&
+    cycle.durationMs >= 18 * 60000;
+  const cycleStalled =
+    cycle.entries >= 12 &&
+    cycle.net < 1 &&
+    cycle.durationMs >= 24 * 60000;
+  const bucketPositive = bucket.total < 8 || bucket.roi >= (matureSample ? -0.12 : -0.08) || bucket.winRate >= (matureSample ? 0.43 : 0.45);
+  const bucketStrong = bucket.total < 8 || bucket.roi >= (matureSample ? -0.04 : -0.01) || bucket.winRate >= (matureSample ? 0.49 : 0.51);
+  const sourceStable = source.total < 8 || source.roi >= (matureSample ? -0.1 : -0.06) || source.winRate >= (matureSample ? 0.44 : 0.46);
+  const sourceStrong = source.total < 8 || source.roi >= (matureSample ? -0.02 : 0) || source.winRate >= (matureSample ? 0.5 : 0.52);
+  const tierStrong = tierPerf.total < 10 || tierPerf.roi >= (matureSample ? -0.03 : 0) || tierPerf.winRate >= (matureSample ? 0.5 : 0.52);
+  const isAssist = candidate.sourceMode === "BALANCED-ASSIST";
+
+  if (candidate.tier === "A") {
+    return (
+      sourceStrong &&
+      tierStrong &&
+      candidate.expected >= 0.45 &&
+      candidate.confidence >= 58 &&
+      (recent.total < 6 || recent.roi >= -0.12 || recent.winRate >= 0.44 || cycleSlow)
+    );
+  }
+
+  if (candidate.tier === "B") {
+    return (
+      bucketPositive &&
+      (
+        recent.total < 6 ||
+        recent.roi >= (matureSample ? -0.22 : -0.18) ||
+        recent.winRate >= (matureSample ? 0.39 : 0.41) ||
+        idleMinutes >= (matureSample ? 4 : 6) ||
+        cycleSlow ||
+        cycleStalled
+      )
+    );
+  }
+
+  return (
+    candidate.tier === "C" &&
+    bucketStrong &&
+    !isAssist &&
+    (idleMinutes >= (matureSample ? 6 : 8) || cycleVerySlow || cycleStalled) &&
+    (recent.total < 6 || (recent.winRate >= (matureSample ? 0.42 : 0.45) && recent.roi >= (matureSample ? -0.12 : -0.08)))
+  );
+}
+
+async function getFrozenHybridEntries() {
+  const stored = await chrome.storage.local.get(["frozenHybridEntries"]);
+  return Array.isArray(stored.frozenHybridEntries) ? stored.frozenHybridEntries : [];
+}
+
+async function freezeHybridEntries(dynamicEntries) {
+  const frozen = await getFrozenHybridEntries();
+  const existingKeys = new Set(
+    frozen.map((entry) => `${entry.time}|${entry.actual}`)
+  );
+  const lastFrozenTime = frozen.length
+    ? Math.max(...frozen.map((entry) => new Date(entry.time || 0).getTime()).filter((time) => Number.isFinite(time)))
+    : -Infinity;
+  const additions = [];
+
+  (dynamicEntries || []).forEach((entry) => {
+    const entryTime = new Date(entry.time || 0).getTime();
+    if (!Number.isFinite(entryTime)) return;
+    if (entryTime <= lastFrozenTime) return;
+    const key = `${entry.time}|${entry.actual}`;
+    if (existingKeys.has(key)) return;
+    existingKeys.add(key);
+    additions.push(entry);
+  });
+
+  if (additions.length) {
+    const merged = [...frozen, ...additions].sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+    await chrome.storage.local.set({ frozenHybridEntries: merged });
+    return merged;
+  }
+
+  return frozen.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+}
+
+function rebuildHybridFromFrozen(data, frozenEntries) {
+  const entries = frozenEntries.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+  const entryStats = {
+    total: entries.length,
+    wins: entries.filter((entry) => entry.win).length,
+    winRate: entries.length ? entries.filter((entry) => entry.win).length / entries.length : 0,
+    roi: entries.length ? entries.reduce((sum, entry) => sum + entry.pnl, 0) / entries.length : 0,
+  };
+  const cadence = { ...data.cadence, hybrid: hourlyStats(entries) };
+  const cycles = { ...data.cycles, hybrid: cycleStats(entries, "HYBRID") };
+  const openCycles = { ...data.openCycles, hybrid: cycles.hybrid.find((cycle) => cycle.records < 50) || null };
+  const daily = { ...data.daily, hybrid: dailyStats(entries, "HYBRID") };
+  const gainCycles = profitCycles(entries, 5);
+  const currentGainCycle = currentProfitCycleState(entries, 5);
+  const regimes = regimeStats(entries);
+  const equity = equityStats(entries);
+  const hybridSources = {
+    dual: entries.filter((entry) => entry.sourceMode === "DUAL").length,
+    balanced: entries.filter((entry) => entry.sourceMode === "BALANCED" || entry.sourceMode === "BALANCED-ASSIST").length,
+    scout: entries.filter((entry) => entry.sourceMode === "SCOUT-LIMPIO").length,
+  };
+
+  return {
+    ...data,
+    entries,
+    entryStats,
+    cadence,
+    cycles,
+    openCycles,
+    daily,
+    gainCycles,
+    currentGainCycle,
+    regimes,
+    equity,
+    hybridSources,
+  };
 }
 
 async function getFrozenDailyReports() {
@@ -1217,7 +1484,7 @@ function buildLiveSignal(data) {
       action: "ENTRAR",
       mode: "HYBRID",
       confidence: data.hybrid.confidence,
-      note: `Hybrid habilitado. Fuente ${data.hybrid.source}, score ${data.hybrid.projection.score.toFixed(0)} y calidad reciente ${fmtPct(hybridRecent.winRate)}.`,
+      note: `Hybrid habilitado. Nivel ${data.hybrid.tier}, fuente ${data.hybrid.source}, score ${data.hybrid.projection.score.toFixed(0)} y calidad reciente ${fmtPct(hybridRecent.winRate)}.`,
     };
   }
   if (hybridNear) {
@@ -1225,7 +1492,7 @@ function buildLiveSignal(data) {
       action: "PREPARAR",
       mode: "HYBRID",
       confidence: data.hybrid.confidence,
-      note: `Hybrid está cerca. Fuente ${data.hybrid.source}, expected ${fmtPct(data.hybrid.projection.expected)} y confianza ${data.hybrid.confidence.toFixed(0)}%.`,
+      note: `Hybrid está cerca. Nivel ${data.hybrid.tier}, fuente ${data.hybrid.source}, expected ${fmtPct(data.hybrid.projection.expected)} y confianza ${data.hybrid.confidence.toFixed(0)}%.`,
     };
   }
   return {
@@ -1454,7 +1721,7 @@ function render(data, stats) {
     })
   );
 
-  table("scout-table", ["Hora", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(data.entries.map((entry) => ({ ...entry, consensus: entry.consensus ?? 100 }))));
+  table("scout-table", ["Hora", "Nivel", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(data.entries.map((entry) => ({ ...entry, consensus: entry.consensus ?? 100 }))));
   table("balanced-table", ["Hora", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(data.balancedEntries.map((entry) => ({ ...entry, sourceMode: "BALANCED", consensus: entry.consensus ?? 0 }))));
   table("strict-table", ["Hora", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"], entryRows(data.scoutEntries.map((entry) => ({ ...entry, sourceMode: "SCOUT-LIMPIO", consensus: entry.consensus ?? 0 }))));
   const dailyRows = (rows) =>
@@ -1465,6 +1732,20 @@ function render(data, stats) {
   table("scout-daily-table", ["Dia", "Total", "Ganadas", "Perdidas", "Win Rate", "Neto", "Rango"], dailyRows(data.daily.hybrid));
   table("balanced-daily-table", ["Dia", "Total", "Ganadas", "Perdidas", "Win Rate", "Neto", "Rango"], dailyRows(data.daily.balanced));
   table("strict-daily-table", ["Dia", "Total", "Ganadas", "Perdidas", "Win Rate", "Neto", "Rango"], dailyRows(data.daily.scout));
+  document.getElementById("profit-cycle-current").innerHTML = [
+    `<div class="stat"><div class="label">Ciclo actual</div><div class="value ${data.currentGainCycle.net >= 0 ? "good" : "bad"}">${fmtUnits(data.currentGainCycle.net)}</div><div class="sub">Avance hacia +5.00u</div></div>`,
+    `<div class="stat"><div class="label">Entradas del ciclo</div><div class="value">${data.currentGainCycle.entries}</div><div class="sub">Señales usadas en el ciclo actual</div></div>`,
+    `<div class="stat"><div class="label">Inicio del ciclo</div><div class="value" style="font-size:24px;">${data.currentGainCycle.startedAt ? fmtTime(data.currentGainCycle.startedAt) : "-"}</div><div class="sub">${data.currentGainCycle.startedAt ? dayLabel(data.currentGainCycle.startedAt) : "Esperando primer registro"}</div></div>`,
+    `<div class="stat"><div class="label">Tiempo transcurrido</div><div class="value" style="font-size:24px;">${data.currentGainCycle.entries ? formatDurationMs(data.currentGainCycle.durationMs) : "-"}</div><div class="sub">Duración del ciclo abierto</div></div>`,
+  ].join("");
+  table(
+    "profit-cycles-table",
+    ["Ciclo", "Inicio", "Cierre", "Duracion", "Entradas", "Ganadas", "Perdidas", "Neto", "Prom./entrada"],
+    data.gainCycles.slice(0, 12).map(
+      (cycle) =>
+        `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${fmtDateTime(cycle.startedAt)}</td><td class="mono">${fmtDateTime(cycle.completedAt)}</td><td class="mono">${formatDurationMs(cycle.durationMs)}</td><td class="mono">${cycle.entries}</td><td class="mono good">${cycle.wins}</td><td class="mono bad">${cycle.losses}</td><td class="mono ${cycle.net >= 5 ? "good" : ""}">${fmtUnits(cycle.net)}</td><td class="mono ${cycle.avgPerEntry >= 0 ? "good" : "bad"}">${fmtUnits(cycle.avgPerEntry)}</td></tr>`
+    )
+  );
   const hybridOpenCycle = data.openCycles?.hybrid;
   const openCycleCards = [
     hybridOpenCycle
@@ -1607,7 +1888,9 @@ async function refreshDashboard() {
     if (!response?.ok) return;
     const rounds = response.rounds ?? [];
     const stats = response.stats ?? {};
-    const data = build(rounds);
+    let data = build(rounds);
+    const frozenHybridEntries = await freezeHybridEntries(data.entries);
+    data = rebuildHybridFromFrozen(data, frozenHybridEntries);
     data.daily = await freezeHistoricalDailyReports(data.daily);
     data.cycles = await freezeHistoricalCycles(data.cycles);
     render(data, stats);
@@ -1620,7 +1903,9 @@ function exportReport() {
   refreshDashboard().then(async () => {
     const response = await sendMessage({ type: "GET_DATA" });
     if (!response?.ok) return;
-    const data = build(response.rounds ?? []);
+    let data = build(response.rounds ?? []);
+    const frozenHybridEntries = await freezeHybridEntries(data.entries);
+    data = rebuildHybridFromFrozen(data, frozenHybridEntries);
     data.daily = await freezeHistoricalDailyReports(data.daily);
     data.cycles = await freezeHistoricalCycles(data.cycles);
     const payload = {

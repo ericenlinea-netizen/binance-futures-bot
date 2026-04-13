@@ -36,8 +36,8 @@ class Settings:
     base_timeframe: str = "5m"
     confirm_timeframe: str = "15m"
     lookback_limit: int = 300
-    min_signal_score: float = 70.0
-    max_trades_per_day: int = 3
+    min_signal_score: float = 45.0
+    max_trades_per_day: int = 8
     risk_per_trade: float = 0.0075
     daily_drawdown_limit: float = 0.03
     total_drawdown_limit: float = 0.10
@@ -78,8 +78,8 @@ class Settings:
             base_timeframe=os.getenv("BASE_TIMEFRAME", "5m"),
             confirm_timeframe=os.getenv("CONFIRM_TIMEFRAME", "15m"),
             lookback_limit=int(os.getenv("LOOKBACK_LIMIT", "300")),
-            min_signal_score=float(os.getenv("MIN_SIGNAL_SCORE", "70")),
-            max_trades_per_day=int(os.getenv("MAX_TRADES_PER_DAY", "3")),
+            min_signal_score=float(os.getenv("MIN_SIGNAL_SCORE", "45")),
+            max_trades_per_day=int(os.getenv("MAX_TRADES_PER_DAY", "8")),
             risk_per_trade=float(os.getenv("RISK_PER_TRADE", "0.0075")),
             daily_drawdown_limit=float(os.getenv("DAILY_DRAWDOWN_LIMIT", "0.03")),
             total_drawdown_limit=float(os.getenv("TOTAL_DRAWDOWN_LIMIT", "0.10")),

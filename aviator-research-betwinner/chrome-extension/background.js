@@ -2,6 +2,7 @@ const STORAGE_KEYS = {
   rounds: "researchRounds",
   settings: "researchSettings",
 };
+const MAX_STORED_ROUNDS = 20000;
 
 const DEFAULT_SETTINGS = {
   autoCaptureEnabled: true,
@@ -70,7 +71,7 @@ async function addRound(multiplier, source = "auto") {
     return { ok: true, duplicated: true };
   }
 
-  const nextRounds = [createRoundRecord(normalized, source), ...rounds].slice(0, 5000);
+  const nextRounds = [createRoundRecord(normalized, source), ...rounds].slice(0, MAX_STORED_ROUNDS);
   await chrome.storage.local.set({ [STORAGE_KEYS.rounds]: nextRounds });
   console.log(`[Aviator Research] stored round ${normalized}x via ${source}`);
   return { ok: true, duplicated: false };
