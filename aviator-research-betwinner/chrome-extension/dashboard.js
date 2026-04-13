@@ -1361,23 +1361,23 @@ function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
   const cycle = currentProfitCycleState(existingEntries, 5);
   const idleMinutes = minutesSinceLastEntry(existingEntries, candidate.time);
   const matureSample = totalRounds >= 5000;
-  const longDrought = idleMinutes >= (matureSample ? 2 : 4);
-  const forcedFlow = idleMinutes >= (matureSample ? 4 : 7);
+  const longDrought = idleMinutes >= (matureSample ? 1.5 : 3);
+  const forcedFlow = idleMinutes >= (matureSample ? 3 : 5);
   const cycleSlow =
-    cycle.entries >= 4 &&
+    cycle.entries >= 3 &&
     cycle.net < 2 &&
-    cycle.durationMs >= 8 * 60000;
+    cycle.durationMs >= 6 * 60000;
   const cycleVerySlow =
-    cycle.entries >= 6 &&
+    cycle.entries >= 5 &&
     cycle.net < 1.5 &&
-    cycle.durationMs >= 12 * 60000;
+    cycle.durationMs >= 10 * 60000;
   const cycleStalled =
-    cycle.entries >= 8 &&
+    cycle.entries >= 6 &&
     cycle.net < 1 &&
-    cycle.durationMs >= 16 * 60000;
-  const bucketPositive = bucket.total < 8 || bucket.roi >= (matureSample ? -0.3 : -0.2) || bucket.winRate >= (matureSample ? 0.33 : 0.38);
+    cycle.durationMs >= 12 * 60000;
+  const bucketPositive = bucket.total < 8 || bucket.roi >= (matureSample ? -0.36 : -0.24) || bucket.winRate >= (matureSample ? 0.3 : 0.35);
   const bucketStrong = bucket.total < 8 || bucket.roi >= (matureSample ? -0.04 : -0.01) || bucket.winRate >= (matureSample ? 0.49 : 0.51);
-  const sourceStable = source.total < 8 || source.roi >= (matureSample ? -0.28 : -0.18) || source.winRate >= (matureSample ? 0.34 : 0.39);
+  const sourceStable = source.total < 8 || source.roi >= (matureSample ? -0.34 : -0.22) || source.winRate >= (matureSample ? 0.31 : 0.36);
   const sourceStrong = source.total < 8 || source.roi >= (matureSample ? -0.02 : 0) || source.winRate >= (matureSample ? 0.5 : 0.52);
   const tierStrong = tierPerf.total < 10 || tierPerf.roi >= (matureSample ? -0.03 : 0) || tierPerf.winRate >= (matureSample ? 0.5 : 0.52);
   const isAssist = candidate.sourceMode === "BALANCED-ASSIST";
@@ -1399,13 +1399,13 @@ function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
       (sourceStable || isFlowAssist || forcedFlow) &&
       (
         recent.total < 6 ||
-        recent.roi >= (matureSample ? -0.46 : -0.34) ||
-        recent.winRate >= (matureSample ? 0.28 : 0.33) ||
-        idleMinutes >= (matureSample ? 0.5 : 1) ||
+        recent.roi >= (matureSample ? -0.54 : -0.4) ||
+        recent.winRate >= (matureSample ? 0.24 : 0.3) ||
+        idleMinutes >= (matureSample ? 0.25 : 0.75) ||
         cycleSlow ||
         cycleStalled ||
-        (longDrought && candidate.expected >= 0.3 && candidate.confidence >= 36) ||
-        (forcedFlow && candidate.expected >= 0.27 && candidate.confidence >= 34)
+        (longDrought && candidate.expected >= 0.28 && candidate.confidence >= 32) ||
+        (forcedFlow && candidate.expected >= 0.25 && candidate.confidence >= 30)
       )
     );
   }
@@ -1414,11 +1414,11 @@ function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
     candidate.tier === "C" &&
     bucketPositive &&
     (!isAssist || longDrought || forcedFlow) &&
-    (idleMinutes >= (matureSample ? 0.75 : 1.5) || cycleVerySlow || cycleStalled || longDrought || forcedFlow) &&
+    (idleMinutes >= (matureSample ? 0.5 : 1) || cycleVerySlow || cycleStalled || longDrought || forcedFlow) &&
     (sourceStable || isFlowAssist || longDrought || forcedFlow) &&
     (
       recent.total < 6 ||
-      (recent.winRate >= (matureSample ? 0.25 : 0.3) && recent.roi >= (matureSample ? -0.42 : -0.28)) ||
+      (recent.winRate >= (matureSample ? 0.22 : 0.28) && recent.roi >= (matureSample ? -0.5 : -0.34)) ||
       longDrought ||
       forcedFlow
     )

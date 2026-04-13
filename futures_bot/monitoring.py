@@ -157,6 +157,12 @@ class Monitor:
         base_equity = max(account.equity - account.total_pnl, 1e-9)
         daily_pct = (account.daily_pnl / base_equity) * 100
         total_pct = (account.total_pnl / base_equity) * 100
+        if account.total_pnl > 1:
+            status_line = "Estado general: en ganancia"
+        elif account.total_pnl < -1:
+            status_line = "Estado general: en perdida"
+        else:
+            status_line = "Estado general: estable"
         summary = (
             "RESUMEN CAPITAL\n"
             f"Capital base: ${base_equity:.2f}\n"
@@ -165,7 +171,8 @@ class Monitor:
             f"Hoy: ${account.daily_pnl:.2f} ({daily_pct:+.2f}%)\n"
             f"Acumulado: ${account.total_pnl:.2f} ({total_pct:+.2f}%)\n"
             f"Operaciones hoy: {account.trades_today}\n"
-            f"Modo: {account.mode_profile.value}"
+            f"Modo: {account.mode_profile.value}\n"
+            f"{status_line}"
         )
         self.logger.info(summary)
         await self.notifier.send(summary)
