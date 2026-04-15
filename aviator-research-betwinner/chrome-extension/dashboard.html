@@ -99,8 +99,25 @@
     <section class="grid-4">
       <div class="stat"><div class="label">Operaciones Hybrid</div><div class="value" id="entry-total">0</div><div class="sub">Cierres reales bajo la logica con gale</div></div>
       <div class="stat"><div class="label">Ganadas directas</div><div class="value" id="entry-wins">0</div><div class="sub">Resultados WIN con +0.5u</div></div>
-      <div class="stat"><div class="label">Cierres en gale</div><div class="value" id="entry-win-rate">0</div><div class="sub">Resultados GALE con 0u</div></div>
+      <div class="stat"><div class="label">Cierres en gale</div><div class="value" id="entry-win-rate">0</div><div class="sub">Resultados GALE con +0.5u</div></div>
       <div class="stat"><div class="label">ROI por operacion</div><div class="value" id="entry-roi">0.00u</div><div class="sub">Promedio neto por cada cierre Hybrid</div></div>
+    </section>
+    <section class="panel">
+      <div class="eyebrow">AutoBet Lab</div>
+      <h2 style="margin-top:6px;">Vista previa del ejecutor automatico</h2>
+      <p class="muted" style="margin-top:10px;">Panel solo visual. No ejecuta apuestas ni altera la extension actual. Sirve para ver como trabajaria el autoingreso en Betwinner con stake base, gale x3 y salida en 1.5x.</p>
+      <div class="grid-4" style="margin-top:16px;">
+        <div class="stat"><div class="label">Estado Lab</div><div class="value" id="autobet-status">OFF</div><div class="sub" id="autobet-status-note">Sin integracion activa</div></div>
+        <div class="stat"><div class="label">Stake base</div><div class="value" id="autobet-base-stake">1000</div><div class="sub">Monto inicial hipotetico</div></div>
+        <div class="stat"><div class="label">Stake gale</div><div class="value" id="autobet-gale-stake">3000</div><div class="sub">Base x 3 para segundo intento</div></div>
+        <div class="stat"><div class="label">Cashout</div><div class="value" id="autobet-cashout">1.50x</div><div class="sub">Objetivo automatico de retiro</div></div>
+      </div>
+      <div class="grid-4" style="margin-top:14px;">
+        <div class="stat"><div class="label">Ultima senal</div><div class="value" id="autobet-last-signal">-</div><div class="sub" id="autobet-last-signal-note">Aun sin referencia</div></div>
+        <div class="stat"><div class="label">Proximo intento</div><div class="value" id="autobet-next-stake">1000</div><div class="sub" id="autobet-next-stake-note">Esperando cierre previo</div></div>
+        <div class="stat"><div class="label">Modo hipotetico</div><div class="value" id="autobet-mode">ARMED</div><div class="sub">Solo simulacion visual</div></div>
+        <div class="stat"><div class="label">Guardia</div><div class="value" id="autobet-guard">BLOQ</div><div class="sub" id="autobet-guard-note">Aun no hay autopuesta activa</div></div>
+      </div>
     </section>
     <section class="grid-4">
       <div class="stat"><div class="label">Atlas Hybrid</div><div class="value" id="strict-total">0</div><div class="sub" id="strict-note">Referencia operativa principal</div></div>
@@ -129,8 +146,10 @@
       <div class="stat"><div class="label">Promedio</div><div class="value" id="stat-avg">0.00x</div><div class="sub">Multiplicador promedio observado</div></div>
       <div class="stat"><div class="label">Racha baja actual</div><div class="value" id="stat-streak">0</div><div class="sub">Rondas seguidas por debajo de 1.5x</div></div>
     </section>
-    <section class="panel"><div class="eyebrow">Hybrid</div><h2 style="margin-top:6px;">Ultimos 50 cierres Hybrid</h2><p class="muted" style="margin-top:10px;">Punto unico de referencia para operar, ya consolidado con la logica de gale: WIN +0.5u, GALE 0u y LOSS -3u.</p><div class="grid-4" id="scout-summary" style="margin-top:16px;"></div><div class="table-scroll" id="scout-table"></div><div class="eyebrow" style="margin-top:18px;">Reporte diario</div><p class="muted" style="margin-top:8px;">Ganadas, gales, perdidas y neto acumulado por dia para Hybrid.</p><div class="table-scroll" style="max-height:300px;" id="scout-daily-table"></div><div class="eyebrow" style="margin-top:18px;">Ciclos de ganancia</div><p class="muted" style="margin-top:8px;">Cada ciclo se completa cuando Hybrid acumula +5.0u netas con la logica de gale.</p><div class="grid-4" id="profit-cycle-current" style="margin-top:16px;"></div><div class="table-scroll" style="max-height:320px;" id="profit-cycles-table"></div></section>
+    <section class="panel"><div class="eyebrow">Hybrid</div><h2 style="margin-top:6px;">Ultimos 50 cierres Hybrid</h2><p class="muted" style="margin-top:10px;">Punto unico de referencia para operar, ya consolidado con la logica de gale: WIN +0.5u, GALE +0.5u y LOSS -3u.</p><div class="grid-4" id="scout-summary" style="margin-top:16px;"></div><div class="table-scroll" id="scout-table"></div><div class="eyebrow" style="margin-top:18px;">Reporte diario</div><p class="muted" style="margin-top:8px;">Ganadas, gales, perdidas y neto acumulado por dia para Hybrid.</p><div class="table-scroll" style="max-height:300px;" id="scout-daily-table"></div><div class="eyebrow" style="margin-top:18px;">Ciclos de ganancia</div><p class="muted" style="margin-top:8px;">Cada ciclo se completa cuando Hybrid acumula +5.0u netas con la logica de gale.</p><div class="grid-4" id="profit-cycle-current" style="margin-top:16px;"></div><div class="table-scroll" style="max-height:320px;" id="profit-cycles-table"></div></section>
     <section class="panel"><div class="eyebrow">Ciclos Hybrid</div><h2 style="margin-top:6px;">Resumen por bloques de 50 registros Hybrid</h2><p class="muted" style="margin-top:10px;">Aqui solo se muestran ciclos cerrados y congelados de Hybrid. El ciclo en curso se ve aparte para que el historico no se mueva.</p><div class="grid-4" id="cycle-open-summary" style="margin-top:16px;"></div><div class="table-scroll" id="cycles-table"></div></section>
+    <section class="panel"><div class="eyebrow">Hybrid 1.7x</div><h2 style="margin-top:6px;">Ultimos 50 cierres Hybrid 1.7x</h2><p class="muted" style="margin-top:10px;">Bloque totalmente aparte del actual. Aqui la operacion apunta a 1.7x con la formula propia: WIN +0.85u, GALE +1.86u y LOSS -3u.</p><div class="grid-4" id="hybrid17-summary" style="margin-top:16px;"></div><div class="table-scroll" id="hybrid17-table"></div><div class="eyebrow" style="margin-top:18px;">Reporte diario</div><p class="muted" style="margin-top:8px;">Ganadas, gales, perdidas y neto acumulado por dia para Hybrid 1.7x.</p><div class="table-scroll" style="max-height:300px;" id="hybrid17-daily-table"></div><div class="eyebrow" style="margin-top:18px;">Ciclos de ganancia</div><p class="muted" style="margin-top:8px;">Cada ciclo se completa cuando Hybrid 1.7x acumula +5.0u netas con su propia logica de gale.</p><div class="grid-4" id="hybrid17-profit-cycle-current" style="margin-top:16px;"></div><div class="table-scroll" style="max-height:320px;" id="hybrid17-profit-cycles-table"></div></section>
+    <section class="panel"><div class="eyebrow">Ciclos Hybrid 1.7x</div><h2 style="margin-top:6px;">Resumen por bloques de 50 registros Hybrid 1.7x</h2><p class="muted" style="margin-top:10px;">Estos ciclos son independientes de los de 1.5x y se congelan por separado.</p><div class="grid-4" id="hybrid17-cycle-open-summary" style="margin-top:16px;"></div><div class="table-scroll" id="hybrid17-cycles-table"></div></section>
     <details class="panel">
       <summary>Analisis detallado opcional</summary>
       <div class="detail-stack">

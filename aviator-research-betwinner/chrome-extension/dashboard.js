@@ -61,8 +61,18 @@ const percentile = (values, ratio, fallback = 0) => {
 const HYBRID_EXECUTION = {
   mode: "gale_v1",
   minGapMs: 40000,
+  targetMultiplier: 1.5,
   directWinPnl: 0.5,
-  galeWinPnl: 0,
+  galeWinPnl: 0.5,
+  fullLossPnl: -3,
+};
+
+const HYBRID_17_EXECUTION = {
+  mode: "gale_v1_17",
+  minGapMs: 40000,
+  targetMultiplier: 1.7,
+  directWinPnl: 0.85,
+  galeWinPnl: 1.86,
   fullLossPnl: -3,
 };
 
@@ -464,8 +474,8 @@ function atlasHybrid(rounds, index, calibrationData) {
   };
   const lastRound = rounds[index - 1]?.multiplier ?? 1;
   const prevRound = rounds[index - 2]?.multiplier ?? 1;
-  const immediateClean = lastRound < 3.9 && prevRound < 5.4;
-  const lowPressure = rangeRate(rounds, index, 4, 0, 1.5) >= 0.1;
+  const immediateClean = lastRound < 5.2 && prevRound < 7.4;
+  const lowPressure = rangeRate(rounds, index, 4, 0, 1.5) >= 0;
   const droughtAssist =
     snap.dry15 >= 1 || snap.microCompression >= 0.1 || snap.compression >= 0.18;
   const softDroughtAssist =
@@ -483,53 +493,66 @@ function atlasHybrid(rounds, index, calibrationData) {
     proj.regime !== "SOBRECALENTADO" &&
     (proj.regime === "NEUTRAL" || proj.regime === "RECUPERACION" || proj.regime === "COMPRESION") &&
     (softDroughtAssist || lowPressure) &&
-    lastRound < 6.2 &&
-    snap.shockRisk <= calibrationData.atlas.shockMax + 0.58 &&
-    snap.burstRisk <= calibrationData.atlas.burstMax + 0.7 &&
-    snap.shortHit15 <= Math.max(0.88, calibrationData.atlas.mediumHitMax + 0.38) &&
-    snap.vol6 <= calibrationData.atlas.vol6Max + 1.5 &&
-    proj.score >= 17 &&
-    proj.expected >= Math.max((calibrationData.base || 0) - 0.16, 0.27);
+    lastRound < 7.4 &&
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.68 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.8 &&
+    snap.shortHit15 <= Math.max(0.92, calibrationData.atlas.mediumHitMax + 0.42) &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 1.7 &&
+    proj.score >= 14 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.18, 0.25);
+  const recoveryFlowAssist =
+    proj.regime !== "SOBRECALENTADO" &&
+    (proj.regime === "RECUPERACION" || proj.regime === "NEUTRAL") &&
+    (snap.dry15 >= 1 || snap.compression >= 0.06 || snap.microCompression >= 0.01) &&
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.74 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.9 &&
+    snap.shortHit15 <= Math.max(0.95, calibrationData.atlas.mediumHitMax + 0.46) &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 1.95 &&
+    proj.score >= 11 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.2, 0.23);
   const balancedAssist =
     proj.regime !== "SOBRECALENTADO" &&
     (proj.regime === "COMPRESION" || proj.regime === "RECUPERACION" || proj.regime === "NEUTRAL") &&
     (snap.compression >= 0.08 || snap.microCompression >= 0.02 || droughtAssist) &&
-    snap.shockRisk <= calibrationData.atlas.shockMax + 0.4 &&
-    snap.burstRisk <= calibrationData.atlas.burstMax + 0.5 &&
-    snap.shortHit15 <= Math.max(0.82, calibrationData.atlas.mediumHitMax + 0.3) &&
-    snap.vol6 <= calibrationData.atlas.vol6Max + 1.1 &&
-    proj.score >= 21 &&
-    proj.expected >= Math.max((calibrationData.base || 0) - 0.12, 0.3);
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.5 &&
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.62 &&
+    snap.shortHit15 <= Math.max(0.86, calibrationData.atlas.mediumHitMax + 0.34) &&
+    snap.vol6 <= calibrationData.atlas.vol6Max + 1.28 &&
+    proj.score >= 18 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.14, 0.28);
   const scoutClean =
     scoutRow.decision === "ENTER" &&
     proj.regime !== "SOBRECALENTADO" &&
-    scoutRow.confidence >= 30 &&
-    proj.expected >= Math.max((calibrationData.base || 0) - 0.12, 0.31) &&
+    scoutRow.confidence >= 22 &&
+    proj.expected >= Math.max((calibrationData.base || 0) - 0.16, 0.27) &&
     (immediateClean || droughtAssist) &&
     (lowPressure || droughtAssist);
   const balancedClean =
-    (balancedRow.decision === "ENTER" && balancedRow.confidence >= 34) || balancedAssist;
-  const flowClean = flowAssist && (balancedRow.confidence >= 26 || scoutRow.confidence >= 26);
+    (balancedRow.decision === "ENTER" && balancedRow.confidence >= 26) || balancedAssist;
+  const flowClean = flowAssist && (balancedRow.confidence >= 18 || scoutRow.confidence >= 18);
   const continuityClean =
     continuityAssist &&
-    (Math.max(balancedRow.confidence, scoutRow.confidence) >= 26 || droughtAssist);
+    (Math.max(balancedRow.confidence, scoutRow.confidence) >= 18 || droughtAssist);
+  const recoveryFlowClean =
+    recoveryFlowAssist &&
+    (Math.max(balancedRow.confidence, scoutRow.confidence) >= 16 || droughtAssist);
 
   if (balancedClean && scoutClean) {
     return {
       decision: "ENTER",
       source: "DUAL",
-      tier: proj.expected >= 0.41 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 50 ? "A" : "B",
+      tier: proj.expected >= 0.37 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 42 ? "A" : "B",
       confidence: clamp(Math.max(balancedRow.confidence, scoutRow.confidence, 54) + 6, 0, 100),
       projection: proj,
     };
   }
   if (balancedClean) {
-    const tier = balancedRow.decision === "ENTER" && proj.expected >= 0.39 && Math.max(balancedRow.confidence, 44) >= 48 ? "A" : "B";
+    const tier = balancedRow.decision === "ENTER" && proj.expected >= 0.34 && Math.max(balancedRow.confidence, 36) >= 40 ? "A" : "B";
     return {
       decision: "ENTER",
       source: balancedRow.decision === "ENTER" ? "BALANCED" : "BALANCED-ASSIST",
       tier,
-      confidence: Math.max(balancedRow.confidence, 40),
+      confidence: Math.max(balancedRow.confidence, 32),
       projection: proj,
     };
   }
@@ -537,7 +560,7 @@ function atlasHybrid(rounds, index, calibrationData) {
     return {
       decision: "ENTER",
       source: "SCOUT-LIMPIO",
-      tier: proj.expected >= 0.34 && scoutRow.confidence >= 38 ? "B" : "C",
+      tier: proj.expected >= 0.28 && scoutRow.confidence >= 30 ? "B" : "C",
       confidence: scoutRow.confidence,
       projection: proj,
     };
@@ -546,8 +569,8 @@ function atlasHybrid(rounds, index, calibrationData) {
     return {
       decision: "ENTER",
       source: "FLOW-ASSIST",
-      tier: proj.expected >= 0.31 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 34 ? "B" : "C",
-      confidence: Math.max(balancedRow.confidence, scoutRow.confidence, 32),
+      tier: proj.expected >= 0.25 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 26 ? "B" : "C",
+      confidence: Math.max(balancedRow.confidence, scoutRow.confidence, 24),
       projection: proj,
     };
   }
@@ -555,8 +578,17 @@ function atlasHybrid(rounds, index, calibrationData) {
     return {
       decision: "ENTER",
       source: "CONTINUITY-ASSIST",
-      tier: proj.expected >= 0.29 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 32 ? "B" : "C",
-      confidence: Math.max(balancedRow.confidence, scoutRow.confidence, 30),
+      tier: proj.expected >= 0.23 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 24 ? "B" : "C",
+      confidence: Math.max(balancedRow.confidence, scoutRow.confidence, 22),
+      projection: proj,
+    };
+  }
+  if (recoveryFlowClean) {
+    return {
+      decision: "ENTER",
+      source: "RECOVERY-FLOW",
+      tier: proj.expected >= 0.21 && Math.max(balancedRow.confidence, scoutRow.confidence) >= 20 ? "B" : "C",
+      confidence: Math.max(balancedRow.confidence, scoutRow.confidence, 20),
       projection: proj,
     };
   }
@@ -799,30 +831,64 @@ function outcomeCounts(entries) {
   };
 }
 
-function resolveHybridOperations(rawEntries, rounds = []) {
+function resolveHybridOperations(rawEntries, rounds = [], calibrationData = null, executionConfig = HYBRID_EXECUTION) {
   const orderedEntries = rawEntries
     .slice()
     .sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
   const orderedRounds = rounds
     .slice()
     .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  const consumedEntryIndexes = new Set();
+  const galeCalibration = calibrationData || calibration(orderedRounds);
 
-  const findGaleRound = (minTime) =>
-    orderedRounds.find((round) => {
-      const roundMs = new Date(round.createdAt || 0).getTime();
-      return Number.isFinite(roundMs) && roundMs >= minTime;
+  const findGaleEntry = (minTime) =>
+    orderedEntries.findIndex((candidate, index) => {
+      if (consumedEntryIndexes.has(index)) return false;
+      const candidateMs = new Date(candidate.time || 0).getTime();
+      return Number.isFinite(candidateMs) && candidateMs >= minTime;
     });
+
+  const findGaleCandidate = (minTime, existingOperations) => {
+    for (let i = 12; i < orderedRounds.length; i += 1) {
+      const roundTime = new Date(orderedRounds[i].createdAt || 0).getTime();
+      if (!Number.isFinite(roundTime) || roundTime < minTime) continue;
+
+      const hybridRow = atlasHybrid(orderedRounds, i, galeCalibration);
+      if (hybridRow.decision !== "ENTER") continue;
+
+      const candidate = {
+        time: orderedRounds[i].createdAt,
+        score: hybridRow.projection.score,
+        confidence: hybridRow.confidence,
+        consensus: hybridRow.source === "DUAL" ? 100 : hybridRow.source === "BALANCED" ? 72 : 58,
+        expected: hybridRow.projection.expected,
+        actual: orderedRounds[i].multiplier,
+        regime: hybridRow.projection.regime,
+        sourceMode: hybridRow.source,
+        tier: hybridRow.tier,
+        win: orderedRounds[i].multiplier >= executionConfig.targetMultiplier,
+        pnl: orderedRounds[i].multiplier >= executionConfig.targetMultiplier ? executionConfig.directWinPnl : -1,
+      };
+
+      if (!shouldAcceptHybridEntry(existingOperations, candidate, orderedRounds.length)) continue;
+      return candidate;
+    }
+
+    return null;
+  };
 
   const operations = [];
   let nextAllowedMs = -Infinity;
   let pendingGale = null;
 
-  for (const entry of orderedEntries) {
+  for (let index = 0; index < orderedEntries.length; index += 1) {
+    if (consumedEntryIndexes.has(index)) continue;
+    const entry = orderedEntries[index];
     const entryMs = new Date(entry.time || 0).getTime();
     if (!Number.isFinite(entryMs)) continue;
     if (entryMs < nextAllowedMs) continue;
 
-      if (entry.win) {
+    if ((entry.actual ?? 0) >= executionConfig.targetMultiplier) {
         operations.push({
           ...entry,
           resolvedAt: entry.time,
@@ -831,15 +897,22 @@ function resolveHybridOperations(rawEntries, rounds = []) {
           attempts: 1,
           outcome: "WIN",
           win: true,
-          pnl: HYBRID_EXECUTION.directWinPnl,
-      });
-      nextAllowedMs = entryMs + HYBRID_EXECUTION.minGapMs;
+          pnl: executionConfig.directWinPnl,
+        });
+      nextAllowedMs = entryMs + executionConfig.minGapMs;
       continue;
     }
 
-    const galeAtMs = entryMs + HYBRID_EXECUTION.minGapMs;
-    const galeRound = findGaleRound(galeAtMs);
-    if (!galeRound) {
+    const galeAtMs = entryMs + executionConfig.minGapMs;
+    let galeEntry = null;
+    const galeCandidate = findGaleCandidate(galeAtMs, operations);
+    if (galeCandidate) {
+      galeEntry = galeCandidate;
+      const galeIndex = findGaleEntry(new Date(galeCandidate.time || 0).getTime());
+      if (galeIndex !== -1) consumedEntryIndexes.add(galeIndex);
+    }
+
+    if (!galeEntry) {
       pendingGale = {
         ...entry,
         waitingGale: true,
@@ -849,23 +922,24 @@ function resolveHybridOperations(rawEntries, rounds = []) {
       break;
     }
 
-    const galeSucceeded = galeRound.multiplier >= 1.5;
-    const galeResolvedMs = new Date(galeRound.createdAt || 0).getTime();
+    const galeResolvedMs = new Date(galeEntry.time || 0).getTime();
+    const galeSucceeded = galeEntry.actual >= executionConfig.targetMultiplier;
     operations.push({
       ...entry,
-      resolvedAt: galeRound.createdAt,
-      timeDisplay: `${fmtDateTime(entry.time)} -> ${fmtDateTime(galeRound.createdAt)}`,
-      actual: galeRound.multiplier,
-      actualDisplay: `${entry.actual.toFixed(2)}x -> ${galeRound.multiplier.toFixed(2)}x`,
+      resolvedAt: galeEntry.time,
+      timeDisplay: `${fmtDateTime(entry.time)} -> ${fmtDateTime(galeEntry.time)}`,
+      actual: galeEntry.actual,
+      actualDisplay: `${entry.actual.toFixed(2)}x -> ${galeEntry.actual.toFixed(2)}x`,
       attempts: 2,
-      galeActual: galeRound.multiplier,
-      galeTime: galeRound.createdAt,
+      galeActual: galeEntry.actual,
+      galeTime: galeEntry.time,
+      galeSourceMode: galeEntry.sourceMode,
       sourceMode: `${entry.sourceMode} + GALE`,
       outcome: galeSucceeded ? "GALE" : "LOSS",
       win: galeSucceeded,
-      pnl: galeSucceeded ? HYBRID_EXECUTION.galeWinPnl : HYBRID_EXECUTION.fullLossPnl,
+      pnl: galeSucceeded ? executionConfig.galeWinPnl : executionConfig.fullLossPnl,
     });
-    nextAllowedMs = galeResolvedMs + HYBRID_EXECUTION.minGapMs;
+    nextAllowedMs = galeResolvedMs + executionConfig.minGapMs;
   }
 
   return { operations, pendingGale };
@@ -937,6 +1011,7 @@ function premium(rounds, data) {
 function build(roundsRaw) {
   const rounds = [...roundsRaw].reverse();
   const calibrationData = calibration(rounds);
+  const calibrationData17 = calibration17(rounds);
   const proj = projection(rounds, rounds.length, calibrationData);
   const strategy = atlasStrategy(rounds, rounds.length, calibrationData);
   const balanced = atlasBalanced(rounds, rounds.length, calibrationData);
@@ -948,6 +1023,7 @@ function build(roundsRaw) {
   const rob = robustness(rounds, calibrationData, validation, bands);
   const prem = premium(rounds, { proj, strategy, consensus, robustness: rob });
   const entries = [];
+  const hybrid17Entries = [];
   const balancedEntries = [];
   const scoutEntries = [];
   const strictEntries = [];
@@ -1034,6 +1110,26 @@ function build(roundsRaw) {
     entries.push(candidate);
   }
 
+  for (let i = 16; i < rounds.length; i += 1) {
+    const hybridRow17 = atlasHybrid17(rounds, i, calibrationData17);
+    if (hybridRow17.decision !== "ENTER") continue;
+    const candidate17 = {
+      time: rounds[i].createdAt,
+      score: hybridRow17.projection.score,
+      confidence: hybridRow17.confidence,
+      consensus: hybridRow17.tier === "A" ? 92 : hybridRow17.tier === "B" ? 78 : 64,
+      expected: hybridRow17.projection.expected,
+      actual: rounds[i].multiplier,
+      regime: hybridRow17.projection.regime,
+      sourceMode: hybridRow17.source,
+      tier: hybridRow17.tier,
+      win: rounds[i].multiplier >= 1.7,
+      pnl: rounds[i].multiplier >= 1.7 ? 0.85 : -1,
+    };
+    if (!shouldAcceptHybrid17Entry(hybrid17Entries, candidate17, rounds.length)) continue;
+    hybrid17Entries.push(candidate17);
+  }
+
   const entryStats = {
     total: entries.length,
     wins: entries.filter((entry) => entry.win).length,
@@ -1114,7 +1210,7 @@ function build(roundsRaw) {
   const report = buildReport({ rounds, proj, strategy, balanced, scout, hybrid, consensus, validation, wf, bands, rob, prem, entries, strictEntries, entryStats, balancedEntries, balancedStats, scoutEntries, scoutStats, cadence, cycles, openCycles, daily, gainCycles, currentGainCycle, regimes, balancedRegimes, scoutRegimes, rules, calibrationData, equity, balancedEquity, scoutEquity, hybridSources });
   const signal = buildLiveSignal({ proj, strategy, balanced, scout, hybrid, consensus, entries, balancedEntries, scoutEntries });
 
-  return { rounds, proj, strategy, balanced, scout, hybrid, strictEntries, hybridSources, consensus, signal, validation, wf, bands, rob, prem, entries, entryStats, balancedEntries, balancedStats, scoutEntries, scoutStats, cadence, cycles, openCycles, daily, gainCycles, currentGainCycle, regimes, balancedRegimes, scoutRegimes, rules, calibrationData, equity, balancedEquity, scoutEquity, report };
+  return { rounds, proj, strategy, balanced, scout, hybrid, strictEntries, hybridSources, consensus, signal, validation, wf, bands, rob, prem, entries, hybrid17Candidates: hybrid17Entries, entryStats, balancedEntries, balancedStats, scoutEntries, scoutStats, cadence, cycles, openCycles, daily, gainCycles, currentGainCycle, regimes, balancedRegimes, scoutRegimes, rules, calibrationData, calibrationData17, equity, balancedEquity, scoutEquity, report };
 }
 
 function table(id, headers, rows) {
@@ -1361,23 +1457,23 @@ function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
   const cycle = currentProfitCycleState(existingEntries, 5);
   const idleMinutes = minutesSinceLastEntry(existingEntries, candidate.time);
   const matureSample = totalRounds >= 5000;
-  const longDrought = idleMinutes >= (matureSample ? 1.5 : 3);
-  const forcedFlow = idleMinutes >= (matureSample ? 3 : 5);
+  const longDrought = idleMinutes >= (matureSample ? 0.5 : 1.5);
+  const forcedFlow = idleMinutes >= (matureSample ? 1.5 : 3);
   const cycleSlow =
-    cycle.entries >= 3 &&
+    cycle.entries >= 1 &&
     cycle.net < 2 &&
-    cycle.durationMs >= 6 * 60000;
+    cycle.durationMs >= 3 * 60000;
   const cycleVerySlow =
-    cycle.entries >= 5 &&
+    cycle.entries >= 3 &&
     cycle.net < 1.5 &&
-    cycle.durationMs >= 10 * 60000;
+    cycle.durationMs >= 6 * 60000;
   const cycleStalled =
-    cycle.entries >= 6 &&
+    cycle.entries >= 4 &&
     cycle.net < 1 &&
-    cycle.durationMs >= 12 * 60000;
-  const bucketPositive = bucket.total < 8 || bucket.roi >= (matureSample ? -0.36 : -0.24) || bucket.winRate >= (matureSample ? 0.3 : 0.35);
+    cycle.durationMs >= 8 * 60000;
+  const bucketPositive = bucket.total < 8 || bucket.roi >= (matureSample ? -0.56 : -0.38) || bucket.winRate >= (matureSample ? 0.22 : 0.28);
   const bucketStrong = bucket.total < 8 || bucket.roi >= (matureSample ? -0.04 : -0.01) || bucket.winRate >= (matureSample ? 0.49 : 0.51);
-  const sourceStable = source.total < 8 || source.roi >= (matureSample ? -0.34 : -0.22) || source.winRate >= (matureSample ? 0.31 : 0.36);
+  const sourceStable = source.total < 8 || source.roi >= (matureSample ? -0.52 : -0.34) || source.winRate >= (matureSample ? 0.24 : 0.3);
   const sourceStrong = source.total < 8 || source.roi >= (matureSample ? -0.02 : 0) || source.winRate >= (matureSample ? 0.5 : 0.52);
   const tierStrong = tierPerf.total < 10 || tierPerf.roi >= (matureSample ? -0.03 : 0) || tierPerf.winRate >= (matureSample ? 0.5 : 0.52);
   const isAssist = candidate.sourceMode === "BALANCED-ASSIST";
@@ -1399,13 +1495,13 @@ function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
       (sourceStable || isFlowAssist || forcedFlow) &&
       (
         recent.total < 6 ||
-        recent.roi >= (matureSample ? -0.54 : -0.4) ||
-        recent.winRate >= (matureSample ? 0.24 : 0.3) ||
-        idleMinutes >= (matureSample ? 0.25 : 0.75) ||
+        recent.roi >= (matureSample ? -0.78 : -0.58) ||
+        recent.winRate >= (matureSample ? 0.16 : 0.24) ||
+        idleMinutes >= (matureSample ? 0.1 : 0.35) ||
         cycleSlow ||
         cycleStalled ||
-        (longDrought && candidate.expected >= 0.28 && candidate.confidence >= 32) ||
-        (forcedFlow && candidate.expected >= 0.25 && candidate.confidence >= 30)
+        (longDrought && candidate.expected >= 0.2 && candidate.confidence >= 24) ||
+        (forcedFlow && candidate.expected >= 0.18 && candidate.confidence >= 22)
       )
     );
   }
@@ -1414,20 +1510,197 @@ function shouldAcceptHybridEntry(existingEntries, candidate, totalRounds = 0) {
     candidate.tier === "C" &&
     bucketPositive &&
     (!isAssist || longDrought || forcedFlow) &&
-    (idleMinutes >= (matureSample ? 0.5 : 1) || cycleVerySlow || cycleStalled || longDrought || forcedFlow) &&
+    (idleMinutes >= (matureSample ? 0.15 : 0.5) || cycleVerySlow || cycleStalled || longDrought || forcedFlow) &&
     (sourceStable || isFlowAssist || longDrought || forcedFlow) &&
     (
       recent.total < 6 ||
-      (recent.winRate >= (matureSample ? 0.22 : 0.28) && recent.roi >= (matureSample ? -0.5 : -0.34)) ||
+      (recent.winRate >= (matureSample ? 0.14 : 0.2) && recent.roi >= (matureSample ? -0.76 : -0.54)) ||
       longDrought ||
       forcedFlow
     )
   );
 }
 
+function calibration17(rounds) {
+  const points = [];
+  for (let i = 24; i < rounds.length; i += 1) {
+    const snap = snapshot(rounds, i);
+    if (!snap) continue;
+    points.push({
+      ...snap,
+      hit: rounds[i].multiplier >= 1.7 ? 1 : 0,
+    });
+  }
+
+  if (!points.length) {
+    return {
+      base: 0,
+      entryBase: 0,
+      atlas: {
+        compressionMin: 0.46,
+        shockMax: 0.24,
+        burstMax: 0.22,
+        dry15Min: 1,
+        dry15Max: 10,
+        dry5Min: 3,
+        mediumHitMax: 0.54,
+        vol6Max: 1.42,
+        biasAbsMax: 0.2,
+        scoreEnter: 66,
+      },
+    };
+  }
+
+  const winners = points.filter((point) => point.hit === 1);
+  const strong = winners.filter((point) => point.regime === "COMPRESION" || point.regime === "RECUPERACION");
+  const basePool = strong.length >= 18 ? strong : winners.length >= 18 ? winners : points;
+  const losers = points.filter((point) => point.hit === 0);
+
+  const atlas = {
+    compressionMin: clamp(percentile(basePool.map((point) => point.compression), 0.35, 0.46), 0.3, 0.74),
+    shockMax: clamp(percentile(basePool.map((point) => point.shockRisk), 0.74, 0.24), 0.06, 0.34),
+    burstMax: clamp(percentile(basePool.map((point) => point.burstRisk), 0.74, 0.22), 0.06, 0.34),
+    dry15Min: Math.round(clamp(percentile(basePool.map((point) => point.dry15), 0.3, 1), 1, 5)),
+    dry15Max: Math.round(clamp(percentile(basePool.map((point) => point.dry15), 0.92, 10), 4, 14)),
+    dry5Min: Math.round(clamp(percentile(basePool.map((point) => point.dry5), 0.3, 3), 1, 8)),
+    mediumHitMax: clamp(percentile(basePool.map((point) => point.mediumHit15), 0.78, 0.54), 0.22, 0.66),
+    vol6Max: clamp(percentile(basePool.map((point) => point.vol6), 0.8, 1.42), 0.7, 1.95),
+    biasAbsMax: clamp(percentile(basePool.map((point) => Math.abs(point.recoveryBias)), 0.8, 0.2), 0.1, 0.32),
+    scoreEnter: 66,
+  };
+
+  const loserCompression = percentile(losers.map((point) => point.compression), 0.7, atlas.compressionMin);
+  atlas.compressionMin = clamp((atlas.compressionMin + loserCompression) / 2, atlas.compressionMin, 0.82);
+
+  return {
+    base: avg(points.map((point) => point.hit)),
+    entryBase:
+      avg(points.filter((point) => point.regime === "COMPRESION" || point.regime === "RECUPERACION").map((point) => point.hit)) ||
+      0,
+    atlas,
+  };
+}
+
+function projection17(rounds, index, calibrationData) {
+  if (index < 24) {
+    return {
+      score: 0,
+      label: "Insuficiente",
+      tone: "",
+      expected: 0,
+      summary: "Aun no hay suficientes rondas para activar el filtro 1.7x.",
+      regime: "INSUFICIENTE",
+    };
+  }
+
+  const snap = snapshot(rounds, index);
+  const adaptive = calibrationData.atlas;
+  let score = 30;
+
+  score += clamp(snap.compression * 34, 0, 34);
+  score += clamp(snap.microCompression * 14, 0, 14);
+  score += clamp((snap.dry15 - 1) * 6, 0, 20);
+  score += clamp((snap.dry5 - 2) * 3, 0, 14);
+  score += clamp((0.46 - snap.mediumHit15) * 28, -14, 18);
+  score += clamp((0.52 - snap.longHit15) * 18, -12, 14);
+  score += clamp((0.16 - Math.abs(snap.recoveryBias)) * 46, -10, 9);
+  score += clamp((0.18 - Math.abs(snap.drift)) * 26, -10, 8);
+  score += clamp((1.1 - snap.vol6) * 14, -12, 12);
+  score -= clamp(snap.shockRisk * 28, 0, 18);
+  score -= clamp(snap.burstRisk * 18, 0, 12);
+  score -= snap.dry5 <= 2 ? 6 : 0;
+  score += snap.regime === "COMPRESION" ? 14 : snap.regime === "RECUPERACION" ? 18 : snap.regime === "NEUTRAL" ? 6 : -10;
+  score += snap.compression >= adaptive.compressionMin ? 6 : -6;
+  score += snap.shockRisk <= adaptive.shockMax ? 6 : -8;
+  score += snap.burstRisk <= adaptive.burstMax ? 4 : -6;
+  score += snap.mediumHit15 <= adaptive.mediumHitMax ? 5 : -5;
+  score += snap.vol6 <= adaptive.vol6Max ? 5 : -5;
+  score += Math.abs(snap.recoveryBias) <= adaptive.biasAbsMax ? 4 : -4;
+  score = clamp(score, 0, 100);
+
+  const base = Math.max(calibrationData.entryBase || 0, calibrationData.base || 0);
+  const expected = clamp(base + ((score - 50) / 100) * 0.3 + (snap.regime === "RECUPERACION" ? 0.04 : 0), 0, 0.86);
+  const label = score >= 72 ? "Ventana 1.7 Premium" : score >= 50 ? "Ventana 1.7 Selectiva" : "Sin ventaja 1.7";
+  const tone = score >= 72 ? "good" : score >= 50 ? "warn" : "bad";
+  return { score, label, tone, expected, summary: "Filtro especifico para buscar recorrido a 1.7x.", regime: snap.regime };
+}
+
+function atlasHybrid17(rounds, index, calibrationData) {
+  const proj = projection17(rounds, index, calibrationData);
+  if (index < 12) return { decision: "WAIT", source: "NONE", tier: "-", confidence: 0, projection: proj };
+
+  const snap = snapshot(rounds, index);
+  if (!snap || (proj.regime === "SOBRECALENTADO" && snap.shockRisk > calibrationData.atlas.shockMax + 0.1)) {
+    return { decision: "WAIT", source: "NONE", tier: "-", confidence: 0, projection: proj };
+  }
+
+  const checks = [
+    snap.compression >= calibrationData.atlas.compressionMin,
+    snap.dry15 >= calibrationData.atlas.dry15Min && snap.dry15 <= calibrationData.atlas.dry15Max,
+    snap.dry5 >= calibrationData.atlas.dry5Min,
+    snap.shockRisk <= calibrationData.atlas.shockMax + 0.18,
+    snap.burstRisk <= calibrationData.atlas.burstMax + 0.22,
+    snap.mediumHit15 <= calibrationData.atlas.mediumHitMax + 0.12,
+    snap.vol6 <= calibrationData.atlas.vol6Max + 0.34,
+    Math.abs(snap.recoveryBias) <= calibrationData.atlas.biasAbsMax + 0.1,
+    proj.regime === "COMPRESION" || proj.regime === "RECUPERACION" || proj.regime === "NEUTRAL" || proj.regime === "EXPANSION",
+  ];
+  const confidence = clamp(checks.filter(Boolean).length * 11 + (proj.score >= 72 ? 8 : proj.score >= 50 ? 4 : 0), 0, 100);
+  const source =
+    proj.regime === "COMPRESION" ? "HY17-COMPRESION" :
+    proj.regime === "RECUPERACION" ? "HY17-RECUPERACION" :
+    "HY17-NEUTRAL";
+  const tier = proj.score >= 72 && proj.expected >= Math.max(calibrationData.base + 0.01, 0.2) ? "A" : proj.score >= 50 ? "B" : "C";
+  const decision = checks.filter(Boolean).length >= 4 && proj.score >= 44 && proj.expected >= Math.max(calibrationData.base - 0.01, 0.16) ? "ENTER" : "WAIT";
+  return { decision, source, tier, confidence, projection: proj };
+}
+
+function shouldAcceptHybrid17Entry(existingEntries, candidate, totalRounds = 0) {
+  if (!candidate) return false;
+
+  const recent = recentQuality(existingEntries, 10);
+  const bucket = hybridBucketPerformance(existingEntries, candidate, 34);
+  const source = hybridSourcePerformance(existingEntries, candidate, 34);
+  const tierPerf = hybridTierPerformance(existingEntries, candidate.tier, 50);
+  const cycle = currentProfitCycleState(existingEntries, 5);
+  const idleMinutes = minutesSinceLastEntry(existingEntries, candidate.time);
+  const matureSample = totalRounds >= 2000;
+  const longDrought = idleMinutes >= (matureSample ? 0.5 : 1.2);
+  const forcedFlow = idleMinutes >= (matureSample ? 1.2 : 2.2);
+  const bucketPositive = bucket.total < 6 || bucket.roi >= (matureSample ? -0.9 : -0.66) || bucket.winRate >= (matureSample ? 0.12 : 0.18);
+  const sourceStable = source.total < 6 || source.roi >= (matureSample ? -0.78 : -0.56) || source.winRate >= (matureSample ? 0.14 : 0.2);
+  const tierStrong = tierPerf.total < 8 || tierPerf.roi >= (matureSample ? -0.46 : -0.32) || tierPerf.winRate >= (matureSample ? 0.18 : 0.26);
+
+  if (candidate.tier === "A") {
+    return tierStrong && sourceStable && candidate.expected >= 0.17 && candidate.confidence >= 42;
+  }
+  if (candidate.tier === "B") {
+    return bucketPositive && sourceStable && (
+      recent.total < 5 ||
+      recent.roi >= (matureSample ? -1.3 : -1.0) ||
+      recent.winRate >= (matureSample ? 0.06 : 0.12) ||
+      idleMinutes >= (matureSample ? 0.05 : 0.25) ||
+      longDrought ||
+      forcedFlow ||
+      (cycle.entries >= 1 && cycle.net < 1.5)
+    );
+  }
+  return bucketPositive && (
+    longDrought ||
+    forcedFlow ||
+    (recent.total < 4) ||
+    (recent.winRate >= (matureSample ? 0.04 : 0.1) && recent.roi >= (matureSample ? -1.55 : -1.15))
+  );
+}
+
 async function getFrozenHybridEntries() {
   const stored = await chrome.storage.local.get(["frozenHybridEntries"]);
   return Array.isArray(stored.frozenHybridEntries) ? stored.frozenHybridEntries : [];
+}
+
+async function getFrozenHybrid17Entries() {
+  const stored = await chrome.storage.local.get(["frozenHybrid17Entries"]);
+  return Array.isArray(stored.frozenHybrid17Entries) ? stored.frozenHybrid17Entries : [];
 }
 
 async function freezeHybridEntries(dynamicEntries) {
@@ -1459,56 +1732,125 @@ async function freezeHybridEntries(dynamicEntries) {
   return frozen.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
 }
 
-function rebuildHybridFromFrozen(data, frozenEntries) {
-  const resolved = resolveHybridOperations(frozenEntries, data.rounds);
-  const entries = resolved.operations.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
-  const counts = outcomeCounts(entries);
-  const entryStats = {
-    total: counts.total,
-    wins: counts.wins,
-    gales: counts.gales,
-    losses: counts.losses,
-    winRate: counts.directWinRate,
-    successRate: counts.successRate,
-    roi: entries.length ? entries.reduce((sum, entry) => sum + entry.pnl, 0) / entries.length : 0,
+async function freezeHybrid17Entries(dynamicEntries) {
+  const frozen = await getFrozenHybrid17Entries();
+  const existingKeys = new Set(
+    frozen.map((entry) => `${entry.time}|${entry.actual}`)
+  );
+  const lastFrozenTime = frozen.length
+    ? Math.max(...frozen.map((entry) => new Date(entry.time || 0).getTime()).filter((time) => Number.isFinite(time)))
+    : -Infinity;
+  const additions = [];
+
+  (dynamicEntries || []).forEach((entry) => {
+    const entryTime = new Date(entry.time || 0).getTime();
+    if (!Number.isFinite(entryTime)) return;
+    if (entryTime <= lastFrozenTime) return;
+    const key = `${entry.time}|${entry.actual}`;
+    if (existingKeys.has(key)) return;
+    existingKeys.add(key);
+    additions.push(entry);
+  });
+
+  if (additions.length) {
+    const merged = [...frozen, ...additions].sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+    await chrome.storage.local.set({ frozenHybrid17Entries: merged });
+    return merged;
+  }
+
+  return frozen.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+}
+
+function rebuildHybridFromFrozen(data, frozenEntries, frozenHybrid17Entries = []) {
+  const buildHybridVariant = (executionConfig, cycleName) => {
+    const resolved = resolveHybridOperations(frozenEntries, data.rounds, data.calibrationData, executionConfig);
+    const entries = resolved.operations.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+    const counts = outcomeCounts(entries);
+    const cycles = cycleStats(entries, cycleName);
+    return {
+      entries,
+      pendingGale: resolved.pendingGale,
+      entryStats: {
+        total: counts.total,
+        wins: counts.wins,
+        gales: counts.gales,
+        losses: counts.losses,
+        winRate: counts.directWinRate,
+        successRate: counts.successRate,
+        roi: entries.length ? entries.reduce((sum, entry) => sum + entry.pnl, 0) / entries.length : 0,
+      },
+      cadence: hourlyStats(entries),
+      cycles,
+      openCycle: cycles.find((cycle) => cycle.records < 50) || null,
+      daily: dailyStats(entries, cycleName),
+      gainCycles: profitCycles(entries, 5),
+      currentGainCycle: currentProfitCycleState(entries, 5),
+      regimes: regimeStats(entries),
+      equity: equityStats(entries),
+      sources: {
+        dual: entries.filter((entry) => entry.sourceMode === "DUAL").length,
+        balanced: entries.filter((entry) => entry.sourceMode === "BALANCED" || entry.sourceMode === "BALANCED-ASSIST").length,
+        scout: entries.filter((entry) => entry.sourceMode === "SCOUT-LIMPIO").length,
+      },
+      execution: executionConfig,
+    };
   };
-  const cadence = { ...data.cadence, hybrid: hourlyStats(entries) };
-  const cycles = { ...data.cycles, hybrid: cycleStats(entries, "HYBRID") };
-  const openCycles = { ...data.openCycles, hybrid: cycles.hybrid.find((cycle) => cycle.records < 50) || null };
-  const daily = { ...data.daily, hybrid: dailyStats(entries, "HYBRID") };
-  const gainCycles = profitCycles(entries, 5);
-  const currentGainCycle = currentProfitCycleState(entries, 5);
-  const regimes = regimeStats(entries);
-  const equity = equityStats(entries);
-  const hybridSources = {
-    dual: entries.filter((entry) => entry.sourceMode === "DUAL").length,
-    balanced: entries.filter((entry) => entry.sourceMode === "BALANCED" || entry.sourceMode === "BALANCED-ASSIST").length,
-    scout: entries.filter((entry) => entry.sourceMode === "SCOUT-LIMPIO").length,
-  };
+
+  const hybridMain = buildHybridVariant(HYBRID_EXECUTION, "HYBRID");
+  const hybrid17 = (() => {
+    const resolved = resolveHybridOperations(frozenHybrid17Entries, data.rounds, data.calibrationData17, HYBRID_17_EXECUTION);
+    const entries = resolved.operations.slice().sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
+    const counts = outcomeCounts(entries);
+    const cycles = cycleStats(entries, "HYBRID 1.7");
+    return {
+      entries,
+      pendingGale: resolved.pendingGale,
+      entryStats: {
+        total: counts.total,
+        wins: counts.wins,
+        gales: counts.gales,
+        losses: counts.losses,
+        winRate: counts.directWinRate,
+        successRate: counts.successRate,
+        roi: entries.length ? entries.reduce((sum, entry) => sum + entry.pnl, 0) / entries.length : 0,
+      },
+      cadence: hourlyStats(entries),
+      cycles,
+      openCycle: cycles.find((cycle) => cycle.records < 50) || null,
+      daily: dailyStats(entries, "HYBRID 1.7"),
+      gainCycles: profitCycles(entries, 5),
+      currentGainCycle: currentProfitCycleState(entries, 5),
+      regimes: regimeStats(entries),
+      equity: equityStats(entries),
+      execution: HYBRID_17_EXECUTION,
+    };
+  })();
 
   return {
     ...data,
-    entries,
+    entries: hybridMain.entries,
     rawHybridEntries: frozenEntries.slice(),
-    pendingGale: resolved.pendingGale,
-    entryStats,
-    cadence,
-    cycles,
-    openCycles,
-    daily,
-    gainCycles,
-    currentGainCycle,
-    regimes,
-    equity,
-    hybridSources,
+    pendingGale: hybridMain.pendingGale,
+    entryStats: hybridMain.entryStats,
+    cadence: { ...data.cadence, hybrid: hybridMain.cadence, hybrid17: hybrid17.cadence },
+    cycles: { ...data.cycles, hybrid: hybridMain.cycles, hybrid17: hybrid17.cycles },
+    openCycles: { ...data.openCycles, hybrid: hybridMain.openCycle, hybrid17: hybrid17.openCycle },
+    daily: { ...data.daily, hybrid: hybridMain.daily, hybrid17: hybrid17.daily },
+    gainCycles: hybridMain.gainCycles,
+    currentGainCycle: hybridMain.currentGainCycle,
+    regimes: hybridMain.regimes,
+    equity: hybridMain.equity,
+    hybridSources: hybridMain.sources,
+    hybrid17,
   };
 }
 
 async function getFrozenDailyReports() {
   const stored = await chrome.storage.local.get(["frozenDailyReports"]);
-  const reports = stored.frozenDailyReports || { hybrid: {}, balanced: {}, scout: {} };
+  const reports = stored.frozenDailyReports || { hybrid: {}, hybrid17: {}, balanced: {}, scout: {} };
   if (!reports.hybrid && reports.strict) reports.hybrid = reports.strict;
   reports.hybrid ||= {};
+  reports.hybrid17 ||= {};
   reports.balanced ||= {};
   reports.scout ||= {};
   return reports;
@@ -1516,9 +1858,10 @@ async function getFrozenDailyReports() {
 
 async function getFrozenCycleReports() {
   const stored = await chrome.storage.local.get(["frozenCycleReports"]);
-  const reports = stored.frozenCycleReports || { hybrid: {}, balanced: {}, scout: {} };
+  const reports = stored.frozenCycleReports || { hybrid: {}, hybrid17: {}, balanced: {}, scout: {} };
   if (!reports.hybrid && reports.strict) reports.hybrid = reports.strict;
   reports.hybrid ||= {};
+  reports.hybrid17 ||= {};
   reports.balanced ||= {};
   reports.scout ||= {};
   return reports;
@@ -1541,6 +1884,7 @@ async function freezeHistoricalDailyReports(dynamicDaily) {
   };
 
   mergeMode("hybrid", dynamicDaily.hybrid || []);
+  mergeMode("hybrid17", dynamicDaily.hybrid17 || []);
   mergeMode("balanced", dynamicDaily.balanced || []);
   mergeMode("scout", dynamicDaily.scout || []);
 
@@ -1558,6 +1902,7 @@ async function freezeHistoricalDailyReports(dynamicDaily) {
 
   return {
     hybrid: compose("hybrid", dynamicDaily.hybrid),
+    hybrid17: compose("hybrid17", dynamicDaily.hybrid17),
     balanced: compose("balanced", dynamicDaily.balanced),
     scout: compose("scout", dynamicDaily.scout),
   };
@@ -1580,6 +1925,7 @@ async function freezeHistoricalCycles(dynamicCyclesByMode) {
   };
 
   mergeMode("hybrid", dynamicCyclesByMode.hybrid);
+  mergeMode("hybrid17", dynamicCyclesByMode.hybrid17);
   mergeMode("balanced", dynamicCyclesByMode.balanced);
   mergeMode("scout", dynamicCyclesByMode.scout);
 
@@ -1594,6 +1940,7 @@ async function freezeHistoricalCycles(dynamicCyclesByMode) {
 
   return {
     hybrid: compose("hybrid", dynamicCyclesByMode.hybrid),
+    hybrid17: compose("hybrid17", dynamicCyclesByMode.hybrid17),
     balanced: compose("balanced", dynamicCyclesByMode.balanced),
     scout: compose("scout", dynamicCyclesByMode.scout),
   };
@@ -1684,6 +2031,31 @@ function modeReason(strategyRow, labels) {
 }
 
 function render(data, stats) {
+  const autoBetLab = {
+    baseStake: 1000,
+    galeStake: 3000,
+    cashout: 1.5,
+    lastEntry: data.entries.length ? data.entries[data.entries.length - 1] : null,
+    pendingGale: data.pendingGale || null,
+  };
+  const autoBetStatus = autoBetLab.pendingGale
+    ? "WAIT_GALE"
+    : data.signal.action === "ENTRAR" || data.signal.action === "ENTER"
+      ? "ARMED"
+      : data.signal.action === "PREPARAR"
+        ? "READY"
+        : "OFF";
+  const autoBetGuard = autoBetLab.pendingGale
+    ? "GALE"
+    : data.hybrid.decision === "ENTER"
+      ? "LISTO"
+      : "BLOQ";
+  const nextStake =
+    autoBetLab.pendingGale ||
+    (autoBetLab.lastEntry && autoBetLab.lastEntry.outcome === "LOSS")
+      ? autoBetLab.galeStake
+      : autoBetLab.baseStake;
+
   document.getElementById("stat-total").textContent = String(stats.totalRounds ?? 0);
   document.getElementById("stat-hit-rate").textContent = fmtPct(stats.targetHitRate ?? 0);
   document.getElementById("stat-avg").textContent = `${(stats.avgMultiplier ?? 0).toFixed(2)}x`;
@@ -1695,6 +2067,32 @@ function render(data, stats) {
   document.getElementById("entry-wins").textContent = String(data.entryStats.wins);
   document.getElementById("entry-win-rate").textContent = String(data.entryStats.gales ?? 0);
   document.getElementById("entry-roi").textContent = fmtUnits(data.entryStats.roi);
+  document.getElementById("autobet-status").textContent = autoBetStatus;
+  document.getElementById("autobet-status-note").textContent = autoBetLab.pendingGale
+    ? "Hay un gale pendiente bajo la logica actual"
+    : data.hybrid.decision === "ENTER"
+      ? `Hybrid habilitado por ${data.hybrid.source}`
+      : "Modo visual sin ejecucion real";
+  document.getElementById("autobet-base-stake").textContent = String(autoBetLab.baseStake);
+  document.getElementById("autobet-gale-stake").textContent = String(autoBetLab.galeStake);
+  document.getElementById("autobet-cashout").textContent = `${autoBetLab.cashout.toFixed(2)}x`;
+  document.getElementById("autobet-last-signal").textContent = autoBetLab.lastEntry
+    ? fmtTime(autoBetLab.lastEntry.time)
+    : "-";
+  document.getElementById("autobet-last-signal-note").textContent = autoBetLab.lastEntry
+    ? `${autoBetLab.lastEntry.sourceMode} · ${autoBetLab.lastEntry.outcome || "PENDING"}`
+    : "Aun sin referencia";
+  document.getElementById("autobet-next-stake").textContent = String(nextStake);
+  document.getElementById("autobet-next-stake-note").textContent = autoBetLab.pendingGale
+    ? "Proximo intento visual con gale x3"
+    : "Sin cronologia real de autoapuesta";
+  document.getElementById("autobet-mode").textContent = "ARMED";
+  document.getElementById("autobet-guard").textContent = autoBetGuard;
+  document.getElementById("autobet-guard-note").textContent = autoBetLab.pendingGale
+    ? "Esperaria la siguiente oportunidad valida"
+    : data.hybrid.decision === "ENTER"
+      ? "La senal actual habilitaria un intento"
+      : "Esperando una senal operativa";
   document.getElementById("strict-total").textContent = String(data.entryStats.total);
   document.getElementById("strict-note").textContent = `${fmtPct(data.entryStats.successRate ?? 0)} sin perdida · ROI ${fmtUnits(data.entryStats.roi)} · ${data.hybrid.source}`;
   document.getElementById("balanced-total").textContent = String(data.balancedStats.total);
@@ -1928,7 +2326,7 @@ function render(data, stats) {
   table(
     "profit-cycles-table",
     ["Ciclo", "Inicio", "Cierre", "Duracion", "Ops", "Ganadas", "Gales", "Perdidas", "Neto", "Prom./op"],
-    data.gainCycles.slice(0, 12).map(
+    data.gainCycles.slice(0, 50).map(
       (cycle) =>
         `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${fmtDateTime(cycle.startedAt)}</td><td class="mono">${fmtDateTime(cycle.completedAt)}</td><td class="mono">${formatDurationMs(cycle.durationMs)}</td><td class="mono">${cycle.entries}</td><td class="mono good">${cycle.wins}</td><td class="mono warn">${cycle.gales ?? 0}</td><td class="mono bad">${cycle.losses}</td><td class="mono ${cycle.net >= 5 ? "good" : ""}">${fmtUnits(cycle.net)}</td><td class="mono ${cycle.avgPerEntry >= 0 ? "good" : "bad"}">${fmtUnits(cycle.avgPerEntry)}</td></tr>`
     )
@@ -1949,6 +2347,59 @@ function render(data, stats) {
     "cycles-table",
     ["Ciclo", "Registros", "Ganadas", "Gales", "Perdidas", "No-loss rate", "Neto", "Rango"],
     cycles.map(
+      (cycle) =>
+        `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${cycle.records}</td><td class="mono good">${cycle.wins}</td><td class="mono warn">${cycle.gales ?? 0}</td><td class="mono bad">${cycle.losses}</td><td class="mono">${fmtPct(cycle.successRate ?? cycle.winRate)}</td><td class="mono ${cycle.net >= 0 ? "good" : "bad"}">${fmtUnits(cycle.net)}</td><td class="mono">${fmtDateTime(cycle.oldest)} -> ${fmtDateTime(cycle.newest)}</td></tr>`
+    )
+  );
+
+  const hybrid17 = data.hybrid17 || {
+    entries: [],
+    entryStats: { total: 0, wins: 0, gales: 0, losses: 0, successRate: 0, roi: 0 },
+    daily: [],
+    gainCycles: [],
+    currentGainCycle: { net: 0, entries: 0, wins: 0, gales: 0, losses: 0, durationMs: 0, startedAt: null },
+    openCycle: null,
+    cycles: [],
+    pendingGale: null,
+  };
+  document.getElementById("hybrid17-summary").innerHTML = [
+    `<div class="stat"><div class="label">Operaciones</div><div class="value">${hybrid17.entryStats.total || 0}</div><div class="sub">Cierres reales a 1.7x</div></div>`,
+    `<div class="stat"><div class="label">Ganadas</div><div class="value good">${hybrid17.entryStats.wins || 0}</div><div class="sub">WIN con +0.85u</div></div>`,
+    `<div class="stat"><div class="label">Gales</div><div class="value warn">${hybrid17.entryStats.gales || 0}</div><div class="sub">GALE con +1.86u</div></div>`,
+    `<div class="stat"><div class="label">ROI/op</div><div class="value ${hybrid17.entryStats.roi >= 0 ? "good" : "bad"}">${fmtUnits(hybrid17.entryStats.roi || 0)}</div><div class="sub">${fmtPct(hybrid17.entryStats.successRate || 0)} sin perdida</div></div>`,
+  ].join("");
+  table(
+    "hybrid17-table",
+    ["Hora", "Nivel", "Fuente", "Regimen", "Score", "Confianza", "Consenso", "Hit rate esp.", "Resultado", "WIN/LOSS", "P&L"],
+    entryRows((hybrid17.entries || []).slice().reverse().slice(0, 50).reverse().map((entry) => ({ ...entry, consensus: entry.consensus ?? 100 })))
+  );
+  table("hybrid17-daily-table", ["Dia", "Total", "Ganadas", "Gales", "Perdidas", "No-loss rate", "Neto", "Rango"], dailyRows(hybrid17.daily || []));
+  document.getElementById("hybrid17-profit-cycle-current").innerHTML = [
+    `<div class="stat"><div class="label">Ciclo actual</div><div class="value ${hybrid17.currentGainCycle.net >= 0 ? "good" : "bad"}">${fmtUnits(hybrid17.currentGainCycle.net || 0)}</div><div class="sub">Avance hacia +5.00u</div></div>`,
+    `<div class="stat"><div class="label">Operaciones del ciclo</div><div class="value">${hybrid17.currentGainCycle.entries || 0}</div><div class="sub">${hybrid17.currentGainCycle.wins || 0} WIN · ${hybrid17.currentGainCycle.gales || 0} GALE · ${hybrid17.currentGainCycle.losses || 0} LOSS</div></div>`,
+    `<div class="stat"><div class="label">Inicio del ciclo</div><div class="value" style="font-size:24px;">${hybrid17.currentGainCycle.startedAt ? fmtTime(hybrid17.currentGainCycle.startedAt) : "-"}</div><div class="sub">${hybrid17.currentGainCycle.startedAt ? dayLabel(hybrid17.currentGainCycle.startedAt) : "Esperando primer registro"}</div></div>`,
+    `<div class="stat"><div class="label">Tiempo transcurrido</div><div class="value" style="font-size:24px;">${hybrid17.currentGainCycle.entries ? formatDurationMs(hybrid17.currentGainCycle.durationMs) : "-"}</div><div class="sub">${hybrid17.pendingGale ? `Gale pendiente · ${formatDurationMs(hybrid17.pendingGale.elapsedMs)}` : "Duracion del ciclo abierto"}</div></div>`,
+  ].join("");
+  table(
+    "hybrid17-profit-cycles-table",
+    ["Ciclo", "Inicio", "Cierre", "Duracion", "Ops", "Ganadas", "Gales", "Perdidas", "Neto", "Prom./op"],
+    (hybrid17.gainCycles || []).slice(0, 50).map(
+      (cycle) =>
+        `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${fmtDateTime(cycle.startedAt)}</td><td class="mono">${fmtDateTime(cycle.completedAt)}</td><td class="mono">${formatDurationMs(cycle.durationMs)}</td><td class="mono">${cycle.entries}</td><td class="mono good">${cycle.wins}</td><td class="mono warn">${cycle.gales ?? 0}</td><td class="mono bad">${cycle.losses}</td><td class="mono ${cycle.net >= 5 ? "good" : ""}">${fmtUnits(cycle.net)}</td><td class="mono ${cycle.avgPerEntry >= 0 ? "good" : "bad"}">${fmtUnits(cycle.avgPerEntry)}</td></tr>`
+    )
+  );
+  document.getElementById("hybrid17-cycle-open-summary").innerHTML = [
+    hybrid17.openCycle
+      ? `<div class="stat"><div class="label">Hybrid 1.7x abierto</div><div class="value" style="font-size:24px;">${hybrid17.openCycle.records}/50</div><div class="sub">${hybrid17.openCycle.wins}W · ${hybrid17.openCycle.gales ?? 0}G · ${hybrid17.openCycle.losses}L · ${fmtUnits(hybrid17.openCycle.net)}</div></div>`
+      : `<div class="stat"><div class="label">Hybrid 1.7x abierto</div><div class="value" style="font-size:24px;">-</div><div class="sub">Sin ciclo abierto</div></div>`,
+    `<div class="stat"><div class="label">No-loss rate actual</div><div class="value" style="font-size:24px;">${hybrid17.openCycle ? fmtPct(hybrid17.openCycle.successRate ?? hybrid17.openCycle.winRate) : "0.0%"}</div><div class="sub">Del ciclo 1.7x en curso</div></div>`,
+    `<div class="stat"><div class="label">Rango actual</div><div class="value" style="font-size:24px;">${hybrid17.openCycle ? `${hybrid17.openCycle.records}` : "0"}</div><div class="sub">${hybrid17.openCycle ? `${fmtDateTime(hybrid17.openCycle.oldest)} -> ${fmtDateTime(hybrid17.openCycle.newest)}` : "Esperando senales"}</div></div>`,
+    `<div class="stat"><div class="label">Historico cerrado</div><div class="value" style="font-size:24px;">${(hybrid17.cycles || []).length}</div><div class="sub">Ciclos 1.7x congelados</div></div>`,
+  ].join("");
+  table(
+    "hybrid17-cycles-table",
+    ["Ciclo", "Registros", "Ganadas", "Gales", "Perdidas", "No-loss rate", "Neto", "Rango"],
+    (hybrid17.cycles || []).map(
       (cycle) =>
         `<tr><td class="mono">#${cycle.cycle}</td><td class="mono">${cycle.records}</td><td class="mono good">${cycle.wins}</td><td class="mono warn">${cycle.gales ?? 0}</td><td class="mono bad">${cycle.losses}</td><td class="mono">${fmtPct(cycle.successRate ?? cycle.winRate)}</td><td class="mono ${cycle.net >= 0 ? "good" : "bad"}">${fmtUnits(cycle.net)}</td><td class="mono">${fmtDateTime(cycle.oldest)} -> ${fmtDateTime(cycle.newest)}</td></tr>`
     )
@@ -2111,7 +2562,8 @@ async function performDashboardRefresh(force = false) {
 
     let data = build(rounds);
     const frozenHybridEntries = await freezeHybridEntries(data.entries);
-    data = rebuildHybridFromFrozen(data, frozenHybridEntries);
+    const frozenHybrid17Entries = await freezeHybrid17Entries(data.hybrid17Candidates || []);
+    data = rebuildHybridFromFrozen(data, frozenHybridEntries, frozenHybrid17Entries);
     data.daily = await freezeHistoricalDailyReports(data.daily);
     data.cycles = await freezeHistoricalCycles(data.cycles);
     render(data, stats);
@@ -2151,7 +2603,8 @@ function exportReport() {
     if (!response?.ok) return;
     let data = build(response.rounds ?? []);
     const frozenHybridEntries = await freezeHybridEntries(data.entries);
-    data = rebuildHybridFromFrozen(data, frozenHybridEntries);
+    const frozenHybrid17Entries = await freezeHybrid17Entries(data.hybrid17Candidates || []);
+    data = rebuildHybridFromFrozen(data, frozenHybridEntries, frozenHybrid17Entries);
     data.daily = await freezeHistoricalDailyReports(data.daily);
     data.cycles = await freezeHistoricalCycles(data.cycles);
     const payload = {
@@ -2215,6 +2668,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       changes.researchRounds ||
       changes.researchSettings ||
       changes.frozenHybridEntries ||
+      changes.frozenHybrid17Entries ||
       changes.frozenDailyReports ||
       changes.frozenCycleReports
     )

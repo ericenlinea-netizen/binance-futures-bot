@@ -66,6 +66,8 @@ class Settings:
     local_timezone: str = "America/Bogota"
     max_same_side_positions: int = 1
     hourly_summary_minutes: int = 60
+    min_entry_interval_minutes: int = 15
+    max_trades_per_hour: int = 2
 
     @property
     def is_live(self) -> bool:
@@ -116,4 +118,6 @@ class Settings:
             local_timezone=os.getenv("LOCAL_TIMEZONE", "America/Bogota"),
             max_same_side_positions=int(os.getenv("MAX_SAME_SIDE_POSITIONS", "1")),
             hourly_summary_minutes=int(os.getenv("HOURLY_SUMMARY_MINUTES", "60")),
+            min_entry_interval_minutes=int(os.getenv("MIN_ENTRY_INTERVAL_MINUTES", "15")),
+            max_trades_per_hour=int(os.getenv("MAX_TRADES_PER_HOUR", "2")),
         )

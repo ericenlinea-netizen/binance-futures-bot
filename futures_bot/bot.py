@@ -31,6 +31,7 @@ class TradingBot:
             equity=settings.initial_equity,
             available_balance=settings.initial_equity,
         )
+        self.entry_timestamps: list[datetime] = []
         self.status_server = StatusServer(self.account, self.portfolio, self.last_diagnostics)
 
     async def _restore_runtime_state(self) -> None:
@@ -50,6 +51,19 @@ class TradingBot:
         if self.settings.is_live:
             return
         self.store.save_runtime_state(self.account, self.portfolio.open_positions())
+
+    def _can_open_now(self, now: datetime) -> tuple[bool, str]:
+        self.entry_timestamps = [
+            timestamp for timestamp in self.entry_timestamps
+            if (now - timestamp).total_seconds() <= 3600
+        ]
+        if self.entry_timestamps:
+            minutes_since_last = (now - self.entry_timestamps[-1]).total_seconds() / 60
+            if minutes_since_last < self.settings.min_entry_interval_minutes:
+                return False, "entry_cooldown"
+        if len(self.entry_timestamps) >= self.settings.max_trades_per_hour:
+            return False, "hourly_trade_limit"
+        return True, "ok"
 
     async def _bootstrap_balance(self, client: BinanceFuturesClient) -> None:
         if not self.settings.is_live:
@@ -93,6 +107,7 @@ class TradingBot:
             leverage=leverage,
         )
         self.account.trades_today += 1
+        self.entry_timestamps.append(datetime.now(self.settings.tzinfo))
         used_margin = (result.avg_price * quantity) / max(leverage, 1)
         self.account.available_balance = max(self.account.available_balance - used_margin, 0.0)
         self.portfolio.add_position(position)
@@ -228,6 +243,10 @@ class TradingBot:
                         candidates = [signal for signal in scanned if signal is not None]
                         ranked_signals = self._rank_signals(candidates)
                         for signal in ranked_signals:
+                            can_open_now, timing_reason = self._can_open_now(datetime.now(self.settings.tzinfo))
+                            if not can_open_now:
+                                self.logger.info("Signal rejected for %s: %s", signal.symbol, timing_reason)
+                                continue
                             open_positions = self.portfolio.open_positions()
                             open_symbols = [position.symbol for position in open_positions]
                             if self.portfolio.correlation_too_high(signal.symbol, open_symbols):
