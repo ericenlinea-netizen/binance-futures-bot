@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from futures_bot.config import Settings
 from futures_bot.data_engine import BinanceFuturesClient, DataEngine
+from futures_bot.decision_engine import DecisionEngine
 from futures_bot.execution_engine import ExecutionEngine
 from futures_bot.models import AccountState, BacktestTrade, SignalSide, TradeSignal
 from futures_bot.monitoring import Monitor, setup_logging
@@ -24,6 +25,7 @@ class TradingBot:
         self.store = SQLiteStore(settings.sqlite_path)
         self.monitor = Monitor(settings)
         self.strategy = StrategyEngine(settings.min_signal_score)
+        self.decisions = DecisionEngine(settings)
         self.risk = RiskEngine(settings)
         self.portfolio = PortfolioManager(settings)
         self.last_diagnostics: dict[str, dict] = {}
@@ -209,15 +211,7 @@ class TradingBot:
         return signal
 
     def _rank_signals(self, signals: list[TradeSignal]) -> list[TradeSignal]:
-        return sorted(
-            signals,
-            key=lambda signal: (
-                signal.score,
-                signal.trend_strength,
-                signal.atr / max(signal.entry_price, 1e-9),
-            ),
-            reverse=True,
-        )
+        return self.decisions.rank(signals, self.last_diagnostics)
 
     async def run(self) -> None:
         last_summary_day = ""
@@ -250,6 +244,13 @@ class TradingBot:
                             open_positions = self.portfolio.open_positions()
                             open_symbols = [position.symbol for position in open_positions]
                             if self.portfolio.correlation_too_high(signal.symbol, open_symbols):
+                                continue
+                            regime_allowed, regime_reason = self.decisions.is_regime_allowed(
+                                signal,
+                                self.last_diagnostics,
+                            )
+                            if not regime_allowed:
+                                self.logger.info("Signal rejected for %s: %s", signal.symbol, regime_reason)
                                 continue
                             allowed, reason = self.risk.validate_signal(self.account, signal, open_positions)
                             if not allowed:

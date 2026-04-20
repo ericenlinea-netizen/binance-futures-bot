@@ -68,6 +68,8 @@ class Settings:
     hourly_summary_minutes: int = 60
     min_entry_interval_minutes: int = 15
     max_trades_per_hour: int = 2
+    enable_market_regime_filter: bool = True
+    market_bias_min_score: float = 55.0
 
     @property
     def is_live(self) -> bool:
@@ -120,4 +122,6 @@ class Settings:
             hourly_summary_minutes=int(os.getenv("HOURLY_SUMMARY_MINUTES", "60")),
             min_entry_interval_minutes=int(os.getenv("MIN_ENTRY_INTERVAL_MINUTES", "15")),
             max_trades_per_hour=int(os.getenv("MAX_TRADES_PER_HOUR", "2")),
+            enable_market_regime_filter=_get_bool("ENABLE_MARKET_REGIME_FILTER", True),
+            market_bias_min_score=float(os.getenv("MARKET_BIAS_MIN_SCORE", "55")),
         )
