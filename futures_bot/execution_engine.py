@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from typing import Any
 
 from futures_bot.config import Settings
 from futures_bot.data_engine import BinanceFuturesClient
-from futures_bot.models import OrderResult, Position, SignalSide, TradeSignal
+from futures_bot.models import OrderResult, Position, SignalSide, SymbolRules, TradeSignal
 
 
 class ExecutionEngine:
@@ -22,8 +23,65 @@ class ExecutionEngine:
             return price * (1 + bps if reduce_only else 1 - bps)
         return price
 
-    async def place_entry(self, signal: TradeSignal, quantity: float, leverage: int, order_type: str = "MARKET") -> OrderResult:
+    @staticmethod
+    def round_quantity(quantity: float, rules: SymbolRules | None) -> float:
+        if not rules or rules.quantity_step <= 0:
+            return quantity
+        rounded = math.floor(quantity / rules.quantity_step) * rules.quantity_step
+        precision = max(0, min(8, int(round(-math.log10(rules.quantity_step))) if rules.quantity_step < 1 else 0))
+        return round(max(rounded, 0.0), precision)
+
+    @staticmethod
+    def round_price(price: float, rules: SymbolRules | None) -> float:
+        if not rules or rules.price_tick <= 0:
+            return price
+        rounded = round(price / rules.price_tick) * rules.price_tick
+        precision = max(0, min(8, int(round(-math.log10(rules.price_tick))) if rules.price_tick < 1 else 0))
+        return round(rounded, precision)
+
+    async def place_protection_orders(
+        self,
+        position: Position,
+        rules: SymbolRules | None = None,
+    ) -> None:
+        if not self.settings.is_live:
+            return
+        exit_side = "SELL" if position.side is SignalSide.LONG else "BUY"
+        stop_price = self.round_price(position.stop_loss, rules)
+        take_profit_price = self.round_price(position.take_profit_2, rules)
+        orders = [
+            {
+                "symbol": position.symbol,
+                "side": exit_side,
+                "type": "STOP_MARKET",
+                "stopPrice": f"{stop_price:.8f}",
+                "closePosition": "true",
+                "workingType": "MARK_PRICE",
+            },
+            {
+                "symbol": position.symbol,
+                "side": exit_side,
+                "type": "TAKE_PROFIT_MARKET",
+                "stopPrice": f"{take_profit_price:.8f}",
+                "closePosition": "true",
+                "workingType": "MARK_PRICE",
+            },
+        ]
+        for payload in orders:
+            await self.client.create_order(payload)
+
+    async def place_entry(
+        self,
+        signal: TradeSignal,
+        quantity: float,
+        leverage: int,
+        order_type: str = "MARKET",
+        rules: SymbolRules | None = None,
+    ) -> OrderResult:
         order_type = order_type.upper()
+        quantity = self.round_quantity(quantity, rules)
+        if rules and (quantity < rules.min_quantity or quantity * signal.entry_price < rules.min_notional):
+            raise ValueError(f"{signal.symbol} quantity below exchange minimums")
         for attempt in range(1, 4):
             try:
                 if self.settings.is_live:
@@ -35,7 +93,7 @@ class ExecutionEngine:
                         "quantity": f"{quantity:.6f}",
                     }
                     if order_type == "LIMIT":
-                        payload["price"] = f"{signal.entry_price:.2f}"
+                        payload["price"] = f"{self.round_price(signal.entry_price, rules):.8f}"
                         payload["timeInForce"] = "GTC"
                     raw = await self.client.create_order(payload)
                     avg_price = float(raw.get("avgPrice") or raw.get("price") or signal.entry_price)
@@ -63,8 +121,15 @@ class ExecutionEngine:
                 await asyncio.sleep(1.5 * attempt)
         raise RuntimeError("unreachable")
 
-    async def exit_position(self, position: Position, quantity: float, last_price: float) -> OrderResult:
+    async def exit_position(
+        self,
+        position: Position,
+        quantity: float,
+        last_price: float,
+        rules: SymbolRules | None = None,
+    ) -> OrderResult:
         side = SignalSide.SHORT if position.side is SignalSide.LONG else SignalSide.LONG
+        quantity = self.round_quantity(quantity, rules)
         for attempt in range(1, 4):
             try:
                 if self.settings.is_live:

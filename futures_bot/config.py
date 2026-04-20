@@ -70,6 +70,8 @@ class Settings:
     max_trades_per_hour: int = 2
     enable_market_regime_filter: bool = True
     market_bias_min_score: float = 55.0
+    low_score_risk_multiplier: float = 0.50
+    high_score_risk_multiplier: float = 1.15
 
     @property
     def is_live(self) -> bool:
@@ -124,4 +126,6 @@ class Settings:
             max_trades_per_hour=int(os.getenv("MAX_TRADES_PER_HOUR", "2")),
             enable_market_regime_filter=_get_bool("ENABLE_MARKET_REGIME_FILTER", True),
             market_bias_min_score=float(os.getenv("MARKET_BIAS_MIN_SCORE", "55")),
+            low_score_risk_multiplier=float(os.getenv("LOW_SCORE_RISK_MULTIPLIER", "0.50")),
+            high_score_risk_multiplier=float(os.getenv("HIGH_SCORE_RISK_MULTIPLIER", "1.15")),
         )

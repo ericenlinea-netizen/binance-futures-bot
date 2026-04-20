@@ -8,7 +8,7 @@ from futures_bot.config import Settings
 from futures_bot.data_engine import BinanceFuturesClient, DataEngine
 from futures_bot.decision_engine import DecisionEngine
 from futures_bot.execution_engine import ExecutionEngine
-from futures_bot.models import AccountState, BacktestTrade, SignalSide, TradeSignal
+from futures_bot.models import AccountState, BacktestTrade, SignalSide, SymbolRules, TradeSignal
 from futures_bot.monitoring import Monitor, setup_logging
 from futures_bot.persistence import SQLiteStore
 from futures_bot.portfolio_manager import PortfolioManager
@@ -29,6 +29,7 @@ class TradingBot:
         self.risk = RiskEngine(settings)
         self.portfolio = PortfolioManager(settings)
         self.last_diagnostics: dict[str, dict] = {}
+        self.symbol_rules: dict[str, SymbolRules] = {}
         self.account = AccountState(
             equity=settings.initial_equity,
             available_balance=settings.initial_equity,
@@ -84,6 +85,11 @@ class TradingBot:
         leverage: int,
         execution: ExecutionEngine,
     ) -> None:
+        rules = self.symbol_rules.get(signal.symbol)
+        quantity = execution.round_quantity(quantity, rules)
+        if quantity <= 0:
+            self.logger.info("Skipping %s due to rounded zero quantity", signal.symbol)
+            return
         required_margin = (signal.entry_price * quantity) / max(leverage, 1)
         usable_balance = max(
             self.account.available_balance * (1 - self.settings.margin_buffer_ratio),
@@ -97,7 +103,13 @@ class TradingBot:
                 usable_balance,
             )
             return
-        result = await execution.place_entry(signal, quantity, leverage, order_type="MARKET")
+        result = await execution.place_entry(
+            signal,
+            quantity,
+            leverage,
+            order_type="MARKET",
+            rules=rules,
+        )
         position = self.portfolio.build_position(
             symbol=signal.symbol,
             side=signal.side,
@@ -115,6 +127,7 @@ class TradingBot:
         self.portfolio.add_position(position)
         self.store.record_open_trade(position)
         self._persist_runtime_state()
+        await execution.place_protection_orders(position, rules)
         await self.monitor.on_trade_opened(
             symbol=signal.symbol,
             side=signal.side.value,
@@ -137,7 +150,11 @@ class TradingBot:
         execution: ExecutionEngine,
     ) -> None:
         position = self.portfolio.positions[symbol]
-        result = await execution.exit_position(position, quantity, last_price)
+        rules = self.symbol_rules.get(symbol)
+        quantity = execution.round_quantity(quantity, rules)
+        if quantity <= 0:
+            return
+        result = await execution.exit_position(position, quantity, last_price, rules=rules)
         direction = 1 if position.side is SignalSide.LONG else -1
         pnl = (result.avg_price - position.entry_price) * quantity * direction
         fees = (position.entry_price * quantity * self.settings.fee_rate) + (result.avg_price * quantity * self.settings.fee_rate)
@@ -224,6 +241,11 @@ class TradingBot:
             async with BinanceFuturesClient(self.settings) as client:
                 await self._bootstrap_balance(client)
                 await self._restore_runtime_state()
+                try:
+                    self.symbol_rules = await client.fetch_symbol_rules(self.settings.symbols)
+                    self.logger.info("Loaded exchange rules for %d symbols", len(self.symbol_rules))
+                except Exception as exc:
+                    self.logger.warning("Could not load exchange rules: %s", exc)
                 data_engine = DataEngine(client, self.settings)
                 execution = ExecutionEngine(client, self.settings)
                 self.logger.info("Bot started in %s mode for %s", self.settings.mode, ",".join(self.settings.symbols))

@@ -17,8 +17,13 @@ class RiskEngine:
             account.trades_today = 0
             account.last_trade_day = today
 
-    def current_risk_fraction(self, account: AccountState) -> float:
+    def current_risk_fraction(self, account: AccountState, signal: TradeSignal | None = None) -> float:
         risk = self.settings.risk_per_trade
+        if signal:
+            if signal.score >= 80:
+                risk *= self.settings.high_score_risk_multiplier
+            elif signal.score < 60:
+                risk *= self.settings.low_score_risk_multiplier
         if account.mode_profile is ModeProfile.CONSERVATIVE:
             return max(0.005, risk * 0.5)
         if account.mode_profile is ModeProfile.CONTROLLED_AGGRESSIVE:
@@ -53,7 +58,7 @@ class RiskEngine:
         return True, "ok"
 
     def calculate_position_size(self, account: AccountState, signal: TradeSignal) -> tuple[float, int]:
-        risk_amount = account.equity * self.current_risk_fraction(account)
+        risk_amount = account.equity * self.current_risk_fraction(account, signal)
         stop_distance = abs(signal.entry_price - signal.stop_loss)
         if stop_distance <= 0:
             return 0.0, 1

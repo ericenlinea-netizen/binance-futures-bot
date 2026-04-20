@@ -38,6 +38,15 @@ class MarketSnapshot:
 
 
 @dataclass(slots=True)
+class SymbolRules:
+    symbol: str
+    quantity_step: float = 0.001
+    min_quantity: float = 0.0
+    price_tick: float = 0.01
+    min_notional: float = 5.0
+
+
+@dataclass(slots=True)
 class TradeSignal:
     symbol: str
     side: SignalSide

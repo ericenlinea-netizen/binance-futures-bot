@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from futures_bot.config import Settings
-from futures_bot.models import Candle, MarketSnapshot
+from futures_bot.models import Candle, MarketSnapshot, SymbolRules
 
 
 class BinanceFuturesClient:
@@ -94,6 +94,38 @@ class BinanceFuturesClient:
 
     async def fetch_account_balance(self) -> dict[str, Any]:
         return await self._request("GET", "/fapi/v2/account", signed=True)
+
+    async def fetch_exchange_info(self) -> dict[str, Any]:
+        return await self._request("GET", "/fapi/v1/exchangeInfo")
+
+    async def fetch_symbol_rules(self, symbols: list[str]) -> dict[str, SymbolRules]:
+        info = await self.fetch_exchange_info()
+        wanted = set(symbols)
+        rules: dict[str, SymbolRules] = {}
+        for item in info.get("symbols", []):
+            symbol = item.get("symbol")
+            if symbol not in wanted:
+                continue
+            quantity_step = 0.001
+            min_quantity = 0.0
+            price_tick = 0.01
+            min_notional = 5.0
+            for rule in item.get("filters", []):
+                if rule.get("filterType") == "LOT_SIZE":
+                    quantity_step = float(rule.get("stepSize", quantity_step))
+                    min_quantity = float(rule.get("minQty", min_quantity))
+                elif rule.get("filterType") == "PRICE_FILTER":
+                    price_tick = float(rule.get("tickSize", price_tick))
+                elif rule.get("filterType") in {"MIN_NOTIONAL", "NOTIONAL"}:
+                    min_notional = float(rule.get("notional", rule.get("minNotional", min_notional)))
+            rules[symbol] = SymbolRules(
+                symbol=symbol,
+                quantity_step=quantity_step,
+                min_quantity=min_quantity,
+                price_tick=price_tick,
+                min_notional=min_notional,
+            )
+        return rules
 
     async def set_leverage(self, symbol: str, leverage: int) -> dict[str, Any]:
         return await self._request(
